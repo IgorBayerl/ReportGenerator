@@ -144,7 +144,19 @@ To port the HTML reporting functionality from the C# ReportGenerator tool to the
         * Render an HTML page for each class using `base_layout.gohtml`, embedding the class-specific JSON.
         * Update summary page links to point to these class detail pages.
     * **C# Reference:** `HtmlRenderer.cs` (methods `BeginClassReport`, `CreateClassReport`, `GetClassReportFilename`).
-    * **Status:** PENDING.
+    * **Status:** DONE.
+    * **Summary (Step 2.2):**
+        * Implemented generation of individual HTML pages for each class (e.g., `AssemblyName_ClassName.html`).
+        * Added robust logic for creating unique and filesystem-safe filenames for these class reports (`getClassReportFilename`).
+        * Injected class-specific data (via `window.classDetails`) into each detail page. This includes class metadata, a list of its files, line-by-line analysis (with coverage status derived from hits/branches), and placeholders for method/code element metrics, designed for Angular's `CoverageInfoComponent`.
+        * Ensured the global `window.assemblies` data is also available on class detail pages for context and navigation.
+        * Updated the main summary page (`index.html`) so that class entries in `window.assemblies` include a `ReportPath` (`rp`) field, which the Angular app uses to navigate to the respective detail HTML files.
+        * Modified the shared `base_layout.gohtml` template (via Go's `html/template` package) to handle the conditional inclusion of `window.classDetails` (using `{{if .ClassDetailJSON}}`) and the standard inclusion of `window.assemblies`, ensuring data is passed as JSON strings parsed by `JSON.parse()` in the template.
+        * Introduced new view model structs (`AngularClassDetailViewModel`, `AngularCodeFileViewModel`, `AngularLineAnalysisViewModel`) in `internal/reporter/htmlreport/viewmodels.go` to support the detailed class data structure.
+        * Updated `internal/reporter/htmlreport/builder.go` to:
+            * Add `generateClassDetailHTML` function to orchestrate the creation of each class detail page.
+            * Modify `HtmlReportBuilder` to store shared data (Angular asset paths, report settings) for use in both summary and detail page generation.
+            * Update `CreateReport` to call `generateClassDetailHTML` for each class.
 * **Step 2.3: Source Code Rendering on Detail Pages**
     * **Goal:** Display syntax-highlighted source code on class detail pages, with lines colored by coverage status, using data from Go.
     * **Tasks:**

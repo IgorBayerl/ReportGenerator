@@ -20,12 +20,13 @@ const baseLayoutTemplate = `<!DOCTYPE html>
 <body>
     <!-- Data for Angular -->
     <script>
-        window.assemblies = {{.AssembliesJSON}};
-        window.riskHotspots = {{.RiskHotspotsJSON}};
-        window.metrics = {{.MetricsJSON}};
-        window.riskHotspotMetrics = {{.RiskHotspotMetricsJSON}};
-        window.historicCoverageExecutionTimes = {{.HistoricCoverageExecutionTimesJSON}};
-        window.translations = {{.TranslationsJSON}};
+        {{if .ClassDetailJSON}}window.classDetails = JSON.parse({{.ClassDetailJSON}});{{end}}
+        window.assemblies = JSON.parse({{.AssembliesJSON}});
+        window.riskHotspots = JSON.parse({{.RiskHotspotsJSON}});
+        window.metrics = JSON.parse({{.MetricsJSON}});
+        window.riskHotspotMetrics = JSON.parse({{.RiskHotspotMetricsJSON}});
+        window.historicCoverageExecutionTimes = JSON.parse({{.HistoricCoverageExecutionTimesJSON}});
+        window.translations = JSON.parse({{.TranslationsJSON}});
 
         window.branchCoverageAvailable = {{.BranchCoverageAvailable}};
         window.methodCoverageAvailable = {{.MethodCoverageAvailable}};
