@@ -253,3 +253,59 @@ type SidebarElementViewModel struct {
 	CoverageBarValue int    // For percentagebar CSS (0-100 for uncovered part)
 	CoverageTitle    string // e.g., "Line coverage: 50%"
 }
+
+
+// SummaryPageData is the top-level struct for the summaryPageLayoutTemplate
+type SummaryPageData struct {
+	ReportTitle string
+	AppVersion  string
+	CurrentDateTime string
+	Translations map[string]string // For direct use in template
+
+	SummaryCards        []CardViewModel // For the top summary cards
+	OverallHistoryChartData HistoryChartDataViewModel // For the overall history chart
+	
+	HasRiskHotspots bool // To show "No risk hotspots found"
+	HasAssemblies   bool // To show "No assemblies have been covered"
+
+	// For JS script includes (same as ClassDetailData)
+	AngularCssFile         string
+	AngularRuntimeJsFile   string
+	AngularPolyfillsJsFile string
+	AngularMainJsFile      string
+
+	// For window.* JSON objects (same as ClassDetailData, these feed Angular components)
+	AssembliesJSON                     template.JS
+	RiskHotspotsJSON                   template.JS
+	MetricsJSON                        template.JS
+	RiskHotspotMetricsJSON             template.JS
+	HistoricCoverageExecutionTimesJSON template.JS
+	TranslationsJSON                   template.JS // Marshaled version for script
+	BranchCoverageAvailable            bool
+	MethodCoverageAvailable            bool
+	MaximumDecimalPlacesForCoverageQuotas int
+}
+
+// CardViewModel represents a summary card for the Go template
+type CardViewModel struct {
+	Title                      string
+	SubTitle                   string // e.g., "72%"
+	SubTitlePercentageBarValue int    // e.g., 27 for 72% coverage (100-72)
+	Rows                       []CardRowViewModel
+	ProRequired                bool // For the "Method Coverage" card
+}
+
+// CardRowViewModel represents a row in a summary card
+type CardRowViewModel struct {
+	Header    string
+	Text      string
+	Tooltip   string
+	Alignment string // "left" or "right" (or empty for default)
+}
+
+// HistoryChartDataViewModel holds data for rendering a history chart with Go templates
+type HistoryChartDataViewModel struct {
+	Series     bool          // True if there's data to render the chart
+	SVGContent string        // Pre-rendered SVG string
+	JSONData   template.JS   // JSON data for chart interactivity (if custom.js uses it)
+}

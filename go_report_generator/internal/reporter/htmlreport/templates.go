@@ -6,52 +6,102 @@ import (
 	"strings"
 )
 
-const baseLayoutTemplate = `<!DOCTYPE html>
-<html lang="en">
+const summaryPageLayoutTemplate = `<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ .Title }}</title>
-    <!-- Static CSS for overall page structure and theme -->
-    <link rel="stylesheet" type="text/css" href="report.css">
-    <!-- Chartist CSS for charts (if used by static part or Angular) -->
-    <link rel="stylesheet" type="text/css" href="chartist.min.css">
-    <!-- Angular App's CSS -->
-    <link rel="stylesheet" type="text/css" href="{{ .AngularCssFile }}">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE,chrome=1" />
+<link href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAn1BMVEUAAADCAAAAAAA3yDfUAAA3yDfUAAA8PDzr6+sAAAD4+Pg3yDeQkJDTAADt7e3V1dU3yDdCQkIAAADbMTHUAABBykHUAAA2yDY3yDfr6+vTAAB3diDR0dGYcHDUAAAjhiPSAAA3yDeuAADUAAA3yDf////OCALg9+BLzktBuzRelimzKgv87+/dNTVflSn1/PWz6rO126g5yDlYniy0KgwjJ0TyAAAAI3RSTlMABAj0WD6rJcsN7X1HzMqUJyYW+/X08+bltqSeaVRBOy0cE+citBEAAADBSURBVDjLlczXEoIwFIThJPYGiL0XiL3r+z+bBOJs9JDMuLffP8v+Gxfc6aIyDQVjQcnqnvRDEQwLJYtXpZT+YhDHKIjLbS+OUeT4TjkKi6OwOArq+yeKXD9uDqQQbcOjyCy0e6bTojZSftX+U6zUQ7OuittDu1k0WHqRFfdXQijgjKfF6ZwAikvmKD6OQjmKWUcDigkztm5FZN05nMON9ZcoinlBmTNnAUdBnRbUUbgdBZwWbkcBpwXcVsBtxfjb31j1QB5qeebOAAAAAElFTkSuQmCC" rel="icon" type="image/x-icon" />
+<title>{{.ReportTitle}} - {{.Translations.CoverageReport}}</title>
+<link rel="stylesheet" type="text/css" href="report.css" />
+<link rel="stylesheet" type="text/css" href="chartist.min.css"/>
+<link rel="stylesheet" type="text/css" href="{{.AngularCssFile}}">
 </head>
 <body>
-    <!-- Data for Angular -->
+    <!-- Data for Angular components -->
     <script>
-        {{if .ClassDetailJSON}}window.classDetails = JSON.parse({{.ClassDetailJSON}});{{end}}
         window.assemblies = JSON.parse({{.AssembliesJSON}});
         window.riskHotspots = JSON.parse({{.RiskHotspotsJSON}});
         window.metrics = JSON.parse({{.MetricsJSON}});
         window.riskHotspotMetrics = JSON.parse({{.RiskHotspotMetricsJSON}});
         window.historicCoverageExecutionTimes = JSON.parse({{.HistoricCoverageExecutionTimesJSON}});
-        window.translations = JSON.parse({{.TranslationsJSON}});
-
+        window.translations = JSON.parse({{.TranslationsJSON}}); // The marshaled map
         window.branchCoverageAvailable = {{.BranchCoverageAvailable}};
-        window.methodCoverageAvailable = {{.MethodCoverageAvailable}};
+        window.methodCoverageAvailable = {{.MethodCoverageAvailable}}; // For enabling/disabling PRO features in Angular
         window.maximumDecimalPlacesForCoverageQuotas = {{.MaximumDecimalPlacesForCoverageQuotas}};
     </script>
 
-    <!-- Traditional report header - this might be removed or restyled if Angular takes over full page -->
-    <h1>Report for {{ .ParserName }}</h1>
-    <p>Generated on: {{ .GeneratedAt }}</p>
-    
-    <!-- Angular root component will be bootstrapped here -->
-    <div id="content">
-        <app-root></app-root>
-    </div>
+    <div class="container">
+        <div class="containerleft">
+            <h1>{{.ReportTitle}}
+                <!-- GitHub Buttons (from C# original) -->
+                <a class="button" href="https://github.com/danielpalme/ReportGenerator" title="{{.Translations.StarTooltip}}"><i class="icon-star"></i>{{.Translations.Star}}</a>
+                <a class="button" href="https://github.com/sponsors/danielpalme" title="{{.Translations.SponsorTooltip}}"><i class="icon-sponsor"></i>{{.Translations.Sponsor}}</a>
+            </h1>
+            
+            <!-- Summary Cards -->
+            <div class="card-group">
+                {{range .SummaryCards}}
+                <div class="card">
+                    <div class="card-header">{{.Title}}</div>
+                    <div class="card-body">
+                        {{if .ProRequired}}
+                        <div class="center">
+                            <p>{{$.Translations.MethodCoverageProVersion}}</p>
+                            <a class="pro-button" href="https://reportgenerator.io/pro" target="_blank">{{$.Translations.MethodCoverageProButton}}</a>
+                        </div>
+                        {{else}}
+                            {{if .SubTitle}}
+                            <div class="large cardpercentagebar cardpercentagebar{{.SubTitlePercentageBarValue}}">{{.SubTitle}}</div>
+                            {{end}}
+                            <div class="table">
+                                <table>
+                                    {{range .Rows}}
+                                    <tr><th>{{.Header}}:</th><td class="limit-width {{if eq .Alignment "right"}}right{{end}}" title="{{.Tooltip}}">{{.Text}}</td></tr>
+                                    {{end}}
+                                </table>
+                            </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+            </div>
 
-    <!-- Static JS for charts or other elements not handled by Angular -->
-    <script type="text/javascript" src="chartist.min.js"></script>
+            <!-- Overall History Chart -->
+            {{if .OverallHistoryChartData.Series}}
+                <h1>{{.Translations.History}}</h1>
+                <!-- The SVG is rendered directly by Go, Chartist.js might not be needed for this if SVG is static -->
+                <div class="historychart ct-chart" data-data="historyChartDataOverall">{{.OverallHistoryChartData.SVGContent | SafeHTML}}</div>
+                <!-- If custom.js or Angular needs the data for interactivity with this chart: -->
+                <!-- <script type="text/javascript">/* <![CDATA[ */ 
+                // var historyChartDataOverall = {{.OverallHistoryChartData.JSONData | SafeJS}};
+                // /* ]]> */ </script> -->
+            {{end}}
+
+            <!-- Risk Hotspots Section (Angular Component) -->
+            <h1>{{.Translations.RiskHotspots}}</h1>
+            <risk-hotspots></risk-hotspots> 
+            {{if not .HasRiskHotspots}}
+            <p>{{.Translations.NoRiskHotspots}}</p>
+            {{end}}
+
+            <!-- Coverage Section (Angular Component) -->
+            <h1>{{.Translations.Coverage3}}</h1>
+            <coverage-info></coverage-info> 
+            {{if not .HasAssemblies}}
+            <p>{{.Translations.NoCoveredAssemblies}}</p>
+            {{end}}
+
+            <div class="footer">{{.Translations.GeneratedBy}} ReportGenerator {{.AppVersion}}<br />{{.CurrentDateTime}}<br /><a href="https://github.com/danielpalme/ReportGenerator">GitHub</a> | <a href="https://reportgenerator.io">reportgenerator.io</a></div>
+        </div> <!-- End containerleft -->
+    </div> <!-- End container -->
+
+    <script type="text/javascript" src="chartist.min.js"></script> <!-- For Angular components if they use Chartist -->
     <script type="text/javascript" src="custom.js"></script>
-
-    <!-- Angular App's JS files -->
-    <script src="{{ .AngularRuntimeJsFile }}" type="module"></script>
-    <script src="{{ .AngularPolyfillsJsFile }}" type="module"></script>
-    <script src="{{ .AngularMainJsFile }}" type="module"></script>
+    <script src="{{.AngularRuntimeJsFile}}" type="module"></script>
+    {{if .AngularPolyfillsJsFile}}<script src="{{.AngularPolyfillsJsFile}}" type="module"></script>{{end}}
+    <script src="{{.AngularMainJsFile}}" type="module"></script>
 </body>
 </html>`
 
@@ -74,7 +124,7 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
         window.branchCoverageAvailable = {{.BranchCoverageAvailable}};
         window.methodCoverageAvailable = {{.MethodCoverageAvailable}};
         window.maximumDecimalPlacesForCoverageQuotas = {{.MaximumDecimalPlacesForCoverageQuotas}};
-        window.riskHotspots = JSON.parse({{.RiskHotspotsJSON}}); // Ensure these are valid JSON, e.g., "[]" or "{}" if empty
+        window.riskHotspots = JSON.parse({{.RiskHotspotsJSON}}); 
         window.metrics = JSON.parse({{.MetricsJSON}});
         window.riskHotspotMetrics = JSON.parse({{.RiskHotspotMetricsJSON}});
         window.historicCoverageExecutionTimes = JSON.parse({{.HistoricCoverageExecutionTimesJSON}});
@@ -241,43 +291,30 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
 </body>
 </html>`
 
-
-// Parse this new template
-var classDetailTpl = template.Must(template.New("classDetail").Funcs(template.FuncMap{
-	"inc": func(i int) int { return i + 1 },
-	"sub": func(a, b int) int { return a - b },
-	"SanitizeSourceLine": func(line string) template.HTML {
-		// 1. HTML-escape first to get &lt;, &gt;, &amp; …
-        escaped := html.EscapeString(line)
-
-        // 2. Replace TABs with four real spaces first (so that step 3 sees them)
-        escaped = strings.ReplaceAll(escaped, "\t", "    ")
-
-        // 3. Turn every real space into &nbsp;
-        escaped = strings.ReplaceAll(escaped, " ", "&nbsp;")
-
-        return template.HTML(escaped)   // mark it safe – we built the HTML ourselves
-	},
-}).Parse(classDetailLayoutTemplate))
-
-
-
-
 var (
-	baseTpl = template.Must(template.New("base").Parse(baseLayoutTemplate))
+	// classDetailTpl for class detail pages (server-rendered structure)
+	classDetailTpl = template.Must(template.New("classDetail").Funcs(template.FuncMap{
+		"inc":      func(i int) int { return i + 1 },
+		"sub":      func(a, b int) int { return a - b },
+		"SafeHTML": func(s string) template.HTML { return template.HTML(s) },
+		"SafeJS":   func(s string) template.JS { return template.JS(s) },
+		"SanitizeSourceLine": func(line string) template.HTML {
+			// 1. HTML-escape first to get &lt;, &gt;, &amp; …
+			escaped := html.EscapeString(line)
+
+			// 2. Replace TABs with four real spaces first (so that step 3 sees them)
+			escaped = strings.ReplaceAll(escaped, "\t", "    ")
+
+			// 3. Turn every real space into &nbsp;
+			escaped = strings.ReplaceAll(escaped, " ", "&nbsp;")
+
+			return template.HTML(escaped) // mark it safe – we built the HTML ourselves
+		},
+	}).Parse(classDetailLayoutTemplate))
+
+	// summaryPageTpl for the main index.html (summary page)
+	summaryPageTpl = template.Must(template.New("summaryPage").Funcs(template.FuncMap{
+		"SafeHTML": func(s string) template.HTML { return template.HTML(s) },
+		"SafeJS":   func(s string) template.JS { return template.JS(s) },
+	}).Parse(summaryPageLayoutTemplate))
 )
-
-
-/*
-// getBaseLayoutTemplate provides access to the parsed base layout template.
-// This is an alternative to using the global baseTpl directly.
-func getBaseLayoutTemplate() (*template.Template, error) {
-	// If baseTpl was not initialized with template.Must, it could be parsed here.
-	// return template.New("base").Parse(baseLayoutTemplate)
-
-	// Since baseTpl is initialized with template.Must, we can return a clone
-	// if modification per-use is a concern, or the original if it's read-only.
-	// For simplicity, returning the shared instance is fine if it's not modified.
-	return baseTpl, nil // template.Must ensures no error here unless Parse fails at init
-}
-*/

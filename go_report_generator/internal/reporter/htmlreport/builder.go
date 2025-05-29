@@ -49,32 +49,37 @@ type HTMLReportData struct {
 }
 
 type HtmlReportBuilder struct {
-	OutputDir                             string
-	ReportContext                         reporting.IReportContext
-	angularCssFile                        string
-	angularRuntimeJsFile                  string
-	angularPolyfillsJsFile                string
-	angularMainJsFile                     string
+	OutputDir     string
+	ReportContext reporting.IReportContext // Store the context
+
+	// Fields for pre-marshaled global JSON data, accessible by all page generation methods
+	angularCssFile                     string
+	angularRuntimeJsFile               string
+	angularPolyfillsJsFile             string
+	angularMainJsFile                  string
+	assembliesJSON                     template.JS
+	riskHotspotsJSON                   template.JS
+	metricsJSON                        template.JS
+	riskHotspotMetricsJSON             template.JS
+	historicCoverageExecutionTimesJSON template.JS
+	translationsJSON                   template.JS // Marshaled translations for <script> block
+
+	// Settings derived from context
 	branchCoverageAvailable               bool
-	methodCoverageAvailable               bool
+	methodCoverageAvailable               bool // For PRO feature display
 	maximumDecimalPlacesForCoverageQuotas int
 	parserName                            string
 	reportTimestamp                       int64
 	reportTitle                           string
-	translations                          map[string]string
-	onlySummary                           bool
-	assembliesJSON                        template.JS
-	riskHotspotsJSON                      template.JS
-	metricsJSON                           template.JS
-	riskHotspotMetricsJSON                template.JS
-	historicCoverageExecutionTimesJSON    template.JS
-	translationsJSON                      template.JS
+	tag                                   string
+	translations                          map[string]string // Raw translations map for Go template text
+	onlySummary                           bool              // TODO: This flag might need to be set based on ReportContext.Settings if it exists
 }
 
 func NewHtmlReportBuilder(outputDir string, reportCtx reporting.IReportContext) *HtmlReportBuilder {
 	return &HtmlReportBuilder{
 		OutputDir:     outputDir,
-		ReportContext: reportCtx, // Store it
+		ReportContext: reportCtx,
 	}
 }
 
@@ -83,14 +88,18 @@ func (b *HtmlReportBuilder) ReportType() string {
 }
 
 func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
+	if b.ReportContext == nil {
+		return fmt.Errorf("HtmlReportBuilder.ReportContext is not set; it's required for configuration and settings")
+	}
+	reportConfig := b.ReportContext.ReportConfiguration()
+	settings := b.ReportContext.Settings()
+
 	if err := os.MkdirAll(b.OutputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory %s: %w", b.OutputDir, err)
 	}
-
 	if err := b.copyStaticAssets(); err != nil {
 		return fmt.Errorf("failed to copy static assets: %w", err)
 	}
-
 	if err := b.copyAngularAssets(b.OutputDir); err != nil {
 		return fmt.Errorf("failed to copy angular assets: %w", err)
 	}
@@ -103,61 +112,34 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	if cssFile == "" || runtimeJs == "" || mainJs == "" {
 		fmt.Fprintf(os.Stderr, "Warning: One or more Angular assets might be missing (css: %s, runtime: %s, polyfills: %s, main: %s)\n", cssFile, runtimeJs, polyfillsJs, mainJs)
 		if cssFile == "" || runtimeJs == "" || mainJs == "" {
-			return fmt.Errorf("missing critical Angular assets from index.html (css: %s, runtime: %s, main: %s)", cssFile, runtimeJs, mainJs)
+			return fmt.Errorf("missing critical Angular assets from index.html (css: '%s', runtime: '%s', main: '%s')", cssFile, runtimeJs, mainJs)
 		}
 	}
 
+	// Store common builder properties
 	b.angularCssFile = cssFile
 	b.angularRuntimeJsFile = runtimeJs
 	b.angularPolyfillsJsFile = polyfillsJs
 	b.angularMainJsFile = mainJs
-	b.reportTitle = "Coverage Report" // Default title
-	if b.ReportContext != nil && b.ReportContext.ReportConfiguration().Title() != "" {
-		b.reportTitle = b.ReportContext.ReportConfiguration().Title()
+	b.reportTitle = reportConfig.Title()
+	if b.reportTitle == "" {
+		b.reportTitle = "Summary" // Default for summary page
 	}
 	b.parserName = report.ParserName
 	b.reportTimestamp = report.Timestamp
+	b.tag = reportConfig.Tag()
 	b.branchCoverageAvailable = report.BranchesValid != nil && *report.BranchesValid > 0
-	b.methodCoverageAvailable = true // For PRO features in Angular template
-	if b.ReportContext != nil {
-		if settings := b.ReportContext.Settings(); settings != nil { // Call method and check result
-			b.maximumDecimalPlacesForCoverageQuotas = settings.MaximumDecimalPlacesForCoverageQuotas
-		}
-	} else {
-		b.maximumDecimalPlacesForCoverageQuotas = 1 // Default if ReportContext not set
-		fmt.Fprintln(os.Stderr, "Warning: HtmlReportBuilder.ReportContext is not set, using default MaximumDecimalPlacesForCoverageQuotas.")
-	}
-
-	var generatedAtStr string
-	if b.reportTimestamp == 0 {
-		generatedAtStr = "N/A"
-	} else {
-		generatedAtStr = time.Unix(b.reportTimestamp, 0).Format(time.RFC1123Z)
-	}
-
-	// Data for the main index.html (summary page)
-	summaryData := HTMLReportData{
-		Title:                                 b.reportTitle,
-		ParserName:                            b.parserName,
-		GeneratedAt:                           generatedAtStr,
-		Content:                               template.HTML("<app-root></app-root>"),
-		AngularCssFile:                        b.angularCssFile,
-		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
-		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
-		AngularMainJsFile:                     b.angularMainJsFile,
-		BranchCoverageAvailable:               b.branchCoverageAvailable,
-		MethodCoverageAvailable:               b.methodCoverageAvailable,
-		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
-	}
-
+	b.methodCoverageAvailable = true // Per original C# behavior, Pro features relate to this
+	b.maximumDecimalPlacesForCoverageQuotas = settings.MaximumDecimalPlacesForCoverageQuotas
 	b.translations = GetTranslations()
+
+	// Pre-marshal global JSON data for all pages
 	translationsJSONBytes, err := json.Marshal(b.translations)
 	if err != nil {
 		b.translationsJSON = template.JS("({})")
 	} else {
 		b.translationsJSON = template.JS(translationsJSONBytes)
 	}
-	summaryData.TranslationsJSON = b.translationsJSON
 
 	availableMetrics := []AngularMetricViewModel{
 		{Name: "NPath complexity", Abbreviation: "npath", ExplanationURL: "https://modess.io/npath-complexity-cyclomatic-complexity-explained/"},
@@ -169,7 +151,6 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	} else {
 		b.metricsJSON = template.JS(metricsJSONBytes)
 	}
-	summaryData.MetricsJSON = b.metricsJSON
 
 	riskHotspotMetricHeaders := []AngularRiskHotspotMetricHeaderViewModel{
 		{Name: "Cyclomatic complexity", Abbreviation: "cyclomatic", ExplanationURL: "https://www.ndepend.com/docs/code-metrics#CC"},
@@ -182,7 +163,6 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	} else {
 		b.riskHotspotMetricsJSON = template.JS(riskHotspotMetricsJSONBytes)
 	}
-	summaryData.RiskHotspotMetricsJSON = b.riskHotspotMetricsJSON
 
 	var executionTimes []string
 	uniqueExecutionTimestamps := make(map[int64]bool)
@@ -206,33 +186,23 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	} else {
 		b.historicCoverageExecutionTimesJSON = template.JS(historicExecTimesJSONBytes)
 	}
-	summaryData.HistoricCoverageExecutionTimesJSON = b.historicCoverageExecutionTimesJSON
 
 	var angularAssemblies []AngularAssemblyViewModel
-	existingFilenames := make(map[string]struct{})
+	summaryPageAssemblyFilenames := make(map[string]struct{}) // Used to generate unique filenames for class links from summary
 	if report.Assemblies != nil {
 		for _, assembly := range report.Assemblies {
 			assemblyShortName := assembly.Name
-			angularAssembly := AngularAssemblyViewModel{
-				Name:    assembly.Name,
-				Classes: []AngularClassViewModel{},
-			}
+			angularAssembly := AngularAssemblyViewModel{Name: assembly.Name, Classes: []AngularClassViewModel{}}
 			for _, class := range assembly.Classes {
-				classReportFilename := b.getClassReportFilename(assemblyShortName, class.Name, existingFilenames)
+				classReportFilename := b.getClassReportFilename(assemblyShortName, class.Name, summaryPageAssemblyFilenames)
 				angularClass := AngularClassViewModel{
-					Name:              class.DisplayName,
-					ReportPath:        classReportFilename,
-					CoveredLines:      class.LinesCovered,
-					CoverableLines:    class.LinesValid,
-					UncoveredLines:    class.LinesValid - class.LinesCovered,
-					TotalLines:        class.TotalLines,
-					Metrics:           make(map[string]float64),
-					HistoricCoverages: []AngularHistoricCoverageViewModel{},
+					Name: class.DisplayName, ReportPath: classReportFilename, CoveredLines: class.LinesCovered,
+					CoverableLines: class.LinesValid, UncoveredLines: class.LinesValid - class.LinesCovered, TotalLines: class.TotalLines,
+					Metrics: make(map[string]float64), HistoricCoverages: []AngularHistoricCoverageViewModel{},
 				}
 				if len(class.Methods) > 0 {
 					angularClass.TotalMethods = len(class.Methods)
-					coveredMethodCount := 0
-					fullCoveredMethodCount := 0
+					coveredMethodCount, fullCoveredMethodCount := 0, 0
 					for _, m := range class.Methods {
 						if m.LineRate > 0 {
 							coveredMethodCount++
@@ -310,39 +280,153 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	} else {
 		b.assembliesJSON = template.JS(assembliesJSONBytes)
 	}
-	summaryData.AssembliesJSON = b.assembliesJSON
 
-	var angularRiskHotspots []AngularRiskHotspotViewModel
+	var angularRiskHotspots []AngularRiskHotspotViewModel // Keep as empty for now for summary page JSON
 	riskHotspotsJSONBytes, err := json.Marshal(angularRiskHotspots)
 	if err != nil {
 		b.riskHotspotsJSON = template.JS("([])")
 	} else {
 		b.riskHotspotsJSON = template.JS(riskHotspotsJSONBytes)
 	}
-	summaryData.RiskHotspotsJSON = b.riskHotspotsJSON
+
+	// === Render Summary Page (index.html) ===
+	summaryData := SummaryPageData{
+		ReportTitle:                           b.reportTitle,
+		AppVersion:                            "0.0.1", // Placeholder
+		CurrentDateTime:                       time.Now().Format("02/01/2006 - 15:04:05"),
+		Translations:                          b.translations,
+		HasRiskHotspots:                       len(angularRiskHotspots) > 0, // Based on data intended for <risk-hotspots>
+		HasAssemblies:                         len(report.Assemblies) > 0,
+		AssembliesJSON:                        b.assembliesJSON,         // For <coverage-info>
+		RiskHotspotsJSON:                      b.riskHotspotsJSON,       // For <risk-hotspots>
+		MetricsJSON:                           b.metricsJSON,            // For <coverage-info> options
+		RiskHotspotMetricsJSON:                b.riskHotspotMetricsJSON, // For <risk-hotspots>
+		HistoricCoverageExecutionTimesJSON:    b.historicCoverageExecutionTimesJSON,
+		TranslationsJSON:                      b.translationsJSON, // For all components
+		AngularCssFile:                        b.angularCssFile,
+		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
+		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
+		AngularMainJsFile:                     b.angularMainJsFile,
+		BranchCoverageAvailable:               b.branchCoverageAvailable,
+		MethodCoverageAvailable:               b.methodCoverageAvailable,
+		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
+	}
+
+	// Populate SummaryCards for server-side rendering in summaryPageTpl
+	infoCardRows := []CardRowViewModel{
+		{Header: b.translations["Parser"], Text: report.ParserName},
+		{Header: b.translations["Assemblies2"], Text: fmt.Sprintf("%d", len(report.Assemblies)), Alignment: "right"},
+		{Header: b.translations["Classes"], Text: fmt.Sprintf("%d", countTotalClasses(report.Assemblies)), Alignment: "right"},
+		{Header: b.translations["Files2"], Text: fmt.Sprintf("%d", countUniqueFiles(report.Assemblies)), Alignment: "right"},
+	}
+	if report.Timestamp > 0 {
+		infoCardRows = append(infoCardRows, CardRowViewModel{Header: b.translations["CoverageDate"], Text: time.Unix(report.Timestamp, 0).Format("02/01/2006 - 15:04:05")})
+	}
+	if b.tag != "" {
+		infoCardRows = append(infoCardRows, CardRowViewModel{Header: b.translations["Tag"], Text: b.tag})
+	}
+	summaryData.SummaryCards = append(summaryData.SummaryCards, CardViewModel{Title: b.translations["Information"], Rows: infoCardRows})
+
+	lineCovQuota := 0.0
+	lineCovText := "N/A"
+	lineCovTooltip := "-"
+	lineCovBar := 0
+	if report.LinesValid > 0 {
+		lineCovQuota = (float64(report.LinesCovered) / float64(report.LinesValid)) * 100.0
+		lineCovText = fmt.Sprintf("%.1f%%", lineCovQuota)
+		lineCovTooltip = fmt.Sprintf("%d of %d", report.LinesCovered, report.LinesValid)
+		lineCovBar = 100 - int(math.Round(lineCovQuota))
+	}
+	summaryData.SummaryCards = append(summaryData.SummaryCards, CardViewModel{Title: b.translations["LineCoverage"], SubTitle: lineCovText, SubTitlePercentageBarValue: lineCovBar, Rows: []CardRowViewModel{
+		{Header: b.translations["CoveredLines"], Text: fmt.Sprintf("%d", report.LinesCovered), Alignment: "right"}, {Header: b.translations["UncoveredLines"], Text: fmt.Sprintf("%d", report.LinesValid-report.LinesCovered), Alignment: "right"},
+		{Header: b.translations["CoverableLines"], Text: fmt.Sprintf("%d", report.LinesValid), Alignment: "right"}, {Header: b.translations["TotalLines"], Text: fmt.Sprintf("%d", report.TotalLines), Alignment: "right"},
+		{Header: b.translations["LineCoverage"], Text: lineCovText, Tooltip: lineCovTooltip, Alignment: "right"},
+	}})
+	if b.branchCoverageAvailable && report.BranchesCovered != nil && report.BranchesValid != nil {
+		branchCovQuota := 0.0
+		branchCovText := "N/A"
+		branchCovTooltip := "-"
+		branchCovBar := 0
+		if *report.BranchesValid > 0 {
+			branchCovQuota = (float64(*report.BranchesCovered) / float64(*report.BranchesValid)) * 100.0
+			branchCovText = fmt.Sprintf("%.1f%%", branchCovQuota)
+			branchCovTooltip = fmt.Sprintf("%d of %d", *report.BranchesCovered, *report.BranchesValid)
+			branchCovBar = 100 - int(math.Round(branchCovQuota))
+		}
+		summaryData.SummaryCards = append(summaryData.SummaryCards, CardViewModel{Title: b.translations["BranchCoverage"], SubTitle: branchCovText, SubTitlePercentageBarValue: branchCovBar, Rows: []CardRowViewModel{
+			{Header: b.translations["CoveredBranches2"], Text: fmt.Sprintf("%d", *report.BranchesCovered), Alignment: "right"}, {Header: b.translations["TotalBranches"], Text: fmt.Sprintf("%d", *report.BranchesValid), Alignment: "right"},
+			{Header: b.translations["BranchCoverage"], Text: branchCovText, Tooltip: branchCovTooltip, Alignment: "right"},
+		}})
+	}
+	totalMethods, coveredMethods, fullyCoveredMethods := 0, 0, 0
+	for _, asm := range report.Assemblies {
+		for _, cls := range asm.Classes {
+			totalMethods += len(cls.Methods)
+			for _, m := range cls.Methods {
+				if m.LineRate > 0 {
+					coveredMethods++
+				}
+				if m.LineRate >= (1.0-1e-9) && len(m.Lines) > 0 {
+					fullyCoveredMethods++
+				}
+			}
+		}
+	}
+	methodCovText := "N/A"
+	methodCovBar := 0
+	methodCovTooltip := "-"
+	fullMethodCovText := "N/A"
+	fullMethodCovTooltip := "-"
+	if totalMethods > 0 {
+		methodRate := (float64(coveredMethods) / float64(totalMethods)) * 100.0
+		methodCovText = fmt.Sprintf("%.1f%%", methodRate)
+		methodCovBar = 100 - int(math.Round(methodRate))
+		methodCovTooltip = fmt.Sprintf("%d of %d", coveredMethods, totalMethods)
+		fullMethodRate := (float64(fullyCoveredMethods) / float64(totalMethods)) * 100.0
+		fullMethodCovText = fmt.Sprintf("%.1f%%", fullMethodRate)
+		fullMethodCovTooltip = fmt.Sprintf("%d of %d", fullyCoveredMethods, totalMethods)
+	}
+	summaryData.SummaryCards = append(summaryData.SummaryCards, CardViewModel{
+		Title: b.translations["MethodCoverage"], ProRequired: !b.methodCoverageAvailable, SubTitle: methodCovText, SubTitlePercentageBarValue: methodCovBar,
+		Rows: []CardRowViewModel{
+			{Header: b.translations["CoveredCodeElements"], Text: fmt.Sprintf("%d", coveredMethods), Alignment: "right"}, {Header: b.translations["FullCoveredCodeElements"], Text: fmt.Sprintf("%d", fullyCoveredMethods), Alignment: "right"},
+			{Header: b.translations["TotalCodeElements"], Text: fmt.Sprintf("%d", totalMethods), Alignment: "right"},
+			{Header: b.translations["CodeElementCoverageQuota2"], Text: methodCovText, Tooltip: methodCovTooltip, Alignment: "right"},
+			{Header: b.translations["FullCodeElementCoverageQuota2"], Text: fullMethodCovText, Tooltip: fullMethodCovTooltip, Alignment: "right"},
+		},
+	})
+	summaryData.OverallHistoryChartData = HistoryChartDataViewModel{Series: false} // Simplified: no server-rendered history chart on summary for now
 
 	outputIndexPath := filepath.Join(b.OutputDir, "index.html")
-	file, err := os.Create(outputIndexPath)
+	summaryFile, err := os.Create(outputIndexPath)
 	if err != nil {
-		return fmt.Errorf("failed to create index.html at %s: %w", outputIndexPath, err)
+		return fmt.Errorf("failed to create index.html: %w", err)
 	}
-	defer file.Close()
-
-	if err := baseTpl.Execute(file, summaryData); err != nil {
-		return fmt.Errorf("failed to execute base template into %s: %w", outputIndexPath, err)
+	defer summaryFile.Close()
+	if err := summaryPageTpl.Execute(summaryFile, summaryData); err != nil {
+		return fmt.Errorf("failed to execute summary page template: %w", err)
 	}
-	file.Close()
+	summaryFile.Close()
 
+	// === Render Class Detail Pages ===
 	if !b.onlySummary {
+		// Create a new map for filenames for class detail pages to avoid conflicts with summary page's usage (if any)
+		classPageFilenames := make(map[string]struct{})
+
 		for _, assemblyModel := range report.Assemblies {
 			for _, classModel := range assemblyModel.Classes {
+				// Determine filename. Since angularAssemblies was for summary page's JS,
+				// we might need to call getClassReportFilename again here if paths differ or ensure consistency.
+				// For now, assume angularAssemblies has the correct ReportPath for linking.
 				var classReportFilename string
 				foundFilename := false
-				for _, asmView := range angularAssemblies {
+				for _, asmView := range angularAssemblies { // angularAssemblies created for summary page JS
 					if asmView.Name == assemblyModel.Name {
 						for _, classView := range asmView.Classes {
 							if classView.Name == classModel.DisplayName {
-								classReportFilename = classView.ReportPath
+								classReportFilename = classView.ReportPath // Get the pre-determined path
+								// Add to classPageFilenames to ensure it's "reserved" if getClassReportFilename is called again with this map
+								classPageFilenames[strings.ToLower(classReportFilename)] = struct{}{}
 								foundFilename = true
 								break
 							}
@@ -352,22 +436,14 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 						break
 					}
 				}
-				if !foundFilename {
-					return fmt.Errorf("could not find pre-generated report filename for class: '%s' in assembly '%s'", classModel.DisplayName, assemblyModel.Name)
-				}
-				if classReportFilename == "" {
-					fmt.Fprintf(os.Stderr, "Warning: Empty report filename for class '%s' in assembly '%s', skipping detail page generation.\n", classModel.DisplayName, assemblyModel.Name)
-					continue
+
+				if !foundFilename || classReportFilename == "" {
+					fmt.Fprintf(os.Stderr, "Warning: Could not determine report filename for class %s in CreateReport, using direct generation.\n", classModel.DisplayName)
+					// Fallback: generate filename directly for this context
+					classReportFilename = b.getClassReportFilename(assemblyModel.Name, classModel.Name, classPageFilenames)
 				}
 
-				currentTag := ""
-				if b.ReportContext != nil {
-					if cfg := b.ReportContext.ReportConfiguration(); cfg != nil {
-						currentTag = cfg.Tag() // Call method
-					}
-				}
-				err := b.generateClassDetailHTML(&classModel, classReportFilename, currentTag)
-
+				err := b.generateClassDetailHTML(&classModel, classReportFilename, b.tag)
 				if err != nil {
 					return fmt.Errorf("failed to generate detail page for class '%s' (file: %s): %w", classModel.DisplayName, classReportFilename, err)
 				}
@@ -1061,4 +1137,31 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 	}
 
 	return nil
+}
+
+func countTotalClasses(assemblies []model.Assembly) int {
+	count := 0
+	for _, asm := range assemblies {
+		count += len(asm.Classes)
+	}
+	return count
+}
+
+func countUniqueFiles(assemblies []model.Assembly) int {
+	uniqueFiles := make(map[string]bool)
+	for _, asm := range assemblies {
+		for _, cls := range asm.Classes {
+			for _, f := range cls.Files {
+				uniqueFiles[f.Path] = true
+			}
+		}
+	}
+	return len(uniqueFiles)
+}
+
+func IfThenElse(condition bool, a, b float64) float64 { // Simplified for float64 for now
+	if condition {
+		return a
+	}
+	return b
 }
