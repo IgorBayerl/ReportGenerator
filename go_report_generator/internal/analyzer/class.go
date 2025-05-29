@@ -135,10 +135,11 @@ func processClassGroup(
 
 		codeFile, fragmentMetrics, err := processCodeFileFragment(clsXML, sourceDirs, uniqueFilePathsForGrandTotalLines)
 		if err != nil {
+			// Log error or handle as appropriate
+			fmt.Fprintf(os.Stderr, "Warning: could not process code file fragment for %s: %v\n", clsXML.Filename, err)
 			continue
 		}
 		if codeFile != nil {
-			// Simplified file merging (assumes distinct file fragments per clsXML or non-overlapping lines)
 			existingFileIndex := -1
 			for i := range classModel.Files {
 				if classModel.Files[i].Path == codeFile.Path {
@@ -147,9 +148,17 @@ func processClassGroup(
 				}
 			}
 			if existingFileIndex != -1 {
-				classModel.Files[existingFileIndex].CoveredLines += codeFile.CoveredLines
-				classModel.Files[existingFileIndex].CoverableLines += codeFile.CoverableLines
-				classModel.Files[existingFileIndex].Lines = append(classModel.Files[existingFileIndex].Lines, codeFile.Lines...)
+				// Merge codeFile into classModel.Files[existingFileIndex]
+				// This involves merging Lines, MethodMetrics, CodeElements, and recalculating covered/coverable lines for the file.
+				// For simplicity now, we assume Cobertura provides distinct file fragments or non-overlapping lines
+				// and just append. A more robust merge would be needed for complex cases.
+				mergedFile := &classModel.Files[existingFileIndex]             // Get a pointer to modify in place
+				mergedFile.Lines = append(mergedFile.Lines, codeFile.Lines...) // Needs more careful merging if lines can overlap
+				mergedFile.MethodMetrics = append(mergedFile.MethodMetrics, codeFile.MethodMetrics...)
+				mergedFile.CodeElements = append(mergedFile.CodeElements, codeFile.CodeElements...)
+				mergedFile.CoveredLines += codeFile.CoveredLines
+				mergedFile.CoverableLines += codeFile.CoverableLines
+				// TotalLines should be set once from uniqueFilePathsForGrandTotalLines, not summed.
 			} else {
 				classModel.Files = append(classModel.Files, *codeFile)
 			}

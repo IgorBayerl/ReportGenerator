@@ -1,141 +1,133 @@
 package htmlreport
 
 import (
-	"encoding/json" // Added for marshalling translations
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
+	"math" // Added for math.IsNaN, math.IsInf
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort" // Added for sorting metric headers
 	"strings"
 	"time"
 
-	"regexp" // Added for sanitizeFilenameChars
-
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 	"golang.org/x/net/html"
-
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader" // Added for reading source file lines
 )
 
 var (
-	// Absolute paths to asset directories
 	assetsDir             = filepath.Join(utils.ProjectRoot(), "assets", "htmlreport")
 	angularDistSourcePath = filepath.Join(utils.ProjectRoot(), "angular_frontend_spa", "dist")
-
-	// sanitizeFilenameChars replaces or removes characters that are invalid for filenames.
 	sanitizeFilenameChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 )
 
-// HTMLReportData holds all data for the base HTML template.
 type HTMLReportData struct {
-	Title                  string
-	ParserName             string
-	GeneratedAt            string
-	Content                template.HTML // Keep for now, Angular might replace it
-	AngularCssFile         string
-	AngularRuntimeJsFile   string
-	AngularPolyfillsJsFile string
-	AngularMainJsFile      string
-
-	// New fields for Angular data
-	AssembliesJSON                     template.JS // Use template.JS for safety
-	RiskHotspotsJSON                   template.JS
-	MetricsJSON                        template.JS
-	RiskHotspotMetricsJSON             template.JS
-	HistoricCoverageExecutionTimesJSON template.JS
-	TranslationsJSON                   template.JS
-	ClassDetailJSON                    template.JS `json:"-"` // For class detail page specific data
-
-	// New fields for Angular settings
+	Title                                 string
+	ParserName                            string
+	GeneratedAt                           string
+	Content                               template.HTML
+	AngularCssFile                        string
+	AngularRuntimeJsFile                  string
+	AngularPolyfillsJsFile                string
+	AngularMainJsFile                     string
+	AssembliesJSON                        template.JS
+	RiskHotspotsJSON                      template.JS
+	MetricsJSON                           template.JS
+	RiskHotspotMetricsJSON                template.JS
+	HistoricCoverageExecutionTimesJSON    template.JS
+	TranslationsJSON                      template.JS
+	ClassDetailJSON                       template.JS `json:"-"`
 	BranchCoverageAvailable               bool
 	MethodCoverageAvailable               bool
 	MaximumDecimalPlacesForCoverageQuotas int
 }
 
-// HtmlReportBuilder is responsible for generating HTML reports.
 type HtmlReportBuilder struct {
-	OutputDir string
-
-	// Fields to store settings and paths for use in class detail page generation
-	angularCssFile         string
-	angularRuntimeJsFile   string
-	angularPolyfillsJsFile string
-	angularMainJsFile      string
-
+	OutputDir                             string
+	ReportContext                         reporting.IReportContext
+	angularCssFile                        string
+	angularRuntimeJsFile                  string
+	angularPolyfillsJsFile                string
+	angularMainJsFile                     string
 	branchCoverageAvailable               bool
 	methodCoverageAvailable               bool
 	maximumDecimalPlacesForCoverageQuotas int
 	parserName                            string
 	reportTimestamp                       int64
 	reportTitle                           string
-	translations                          map[string]string // Keep translations map
+	translations                          map[string]string
 	onlySummary                           bool
-
-	// Pre-marshaled global data
-	assembliesJSON                     template.JS
-	riskHotspotsJSON                   template.JS
-	metricsJSON                        template.JS
-	riskHotspotMetricsJSON             template.JS
-	historicCoverageExecutionTimesJSON template.JS
-	translationsJSON                   template.JS // For marshaled translations
+	assembliesJSON                        template.JS
+	riskHotspotsJSON                      template.JS
+	metricsJSON                           template.JS
+	riskHotspotMetricsJSON                template.JS
+	historicCoverageExecutionTimesJSON    template.JS
+	translationsJSON                      template.JS
 }
 
-// NewHtmlReportBuilder creates a new HtmlReportBuilder.
-func NewHtmlReportBuilder(outputDir string) *HtmlReportBuilder {
+func NewHtmlReportBuilder(outputDir string, reportCtx reporting.IReportContext) *HtmlReportBuilder {
 	return &HtmlReportBuilder{
-		OutputDir: outputDir,
+		OutputDir:     outputDir,
+		ReportContext: reportCtx, // Store it
 	}
 }
 
-// ReportType returns the type of report this builder creates.
 func (b *HtmlReportBuilder) ReportType() string {
 	return "Html"
 }
 
-// CreateReport generates the HTML report based on the SummaryResult.
-// For now, it's a placeholder and will return nil.
 func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
-	// Ensure output directory exists
 	if err := os.MkdirAll(b.OutputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory %s: %w", b.OutputDir, err)
 	}
 
-	// Copy static assets
 	if err := b.copyStaticAssets(); err != nil {
 		return fmt.Errorf("failed to copy static assets: %w", err)
 	}
 
-	// Copy Angular assets
 	if err := b.copyAngularAssets(b.OutputDir); err != nil {
 		return fmt.Errorf("failed to copy angular assets: %w", err)
 	}
 
-	// Parse Angular index.html to get asset filenames
 	angularIndexHTMLPath := filepath.Join(angularDistSourcePath, "index.html")
 	cssFile, runtimeJs, polyfillsJs, mainJs, err := b.parseAngularIndexHTML(angularIndexHTMLPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse Angular index.html: %w", err)
 	}
-	if cssFile == "" || runtimeJs == "" || polyfillsJs == "" || mainJs == "" {
-		return fmt.Errorf("missing one or more critical Angular assets from index.html (css: %s, runtime: %s, polyfills: %s, main: %s)", cssFile, runtimeJs, polyfillsJs, mainJs)
+	if cssFile == "" || runtimeJs == "" || mainJs == "" {
+		fmt.Fprintf(os.Stderr, "Warning: One or more Angular assets might be missing (css: %s, runtime: %s, polyfills: %s, main: %s)\n", cssFile, runtimeJs, polyfillsJs, mainJs)
+		if cssFile == "" || runtimeJs == "" || mainJs == "" {
+			return fmt.Errorf("missing critical Angular assets from index.html (css: %s, runtime: %s, main: %s)", cssFile, runtimeJs, mainJs)
+		}
 	}
 
-	// Store parsed asset filenames and report settings on the builder instance
 	b.angularCssFile = cssFile
 	b.angularRuntimeJsFile = runtimeJs
 	b.angularPolyfillsJsFile = polyfillsJs
 	b.angularMainJsFile = mainJs
-	b.reportTitle = "Coverage Report" // Default title, can be made configurable
+	b.reportTitle = "Coverage Report" // Default title
+	if b.ReportContext != nil && b.ReportContext.ReportConfiguration().Title() != "" {
+		b.reportTitle = b.ReportContext.ReportConfiguration().Title()
+	}
 	b.parserName = report.ParserName
 	b.reportTimestamp = report.Timestamp
 	b.branchCoverageAvailable = report.BranchesValid != nil && *report.BranchesValid > 0
-	b.methodCoverageAvailable = true            // As per issue description
-	b.maximumDecimalPlacesForCoverageQuotas = 1 // Default from C#
+	b.methodCoverageAvailable = true // For PRO features in Angular template
+	if b.ReportContext != nil {
+		if settings := b.ReportContext.Settings(); settings != nil { // Call method and check result
+			b.maximumDecimalPlacesForCoverageQuotas = settings.MaximumDecimalPlacesForCoverageQuotas
+		}
+	} else {
+		b.maximumDecimalPlacesForCoverageQuotas = 1 // Default if ReportContext not set
+		fmt.Fprintln(os.Stderr, "Warning: HtmlReportBuilder.ReportContext is not set, using default MaximumDecimalPlacesForCoverageQuotas.")
+	}
 
-	// Prepare data for the main index.html template
 	var generatedAtStr string
 	if b.reportTimestamp == 0 {
 		generatedAtStr = "N/A"
@@ -143,81 +135,61 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 		generatedAtStr = time.Unix(b.reportTimestamp, 0).Format(time.RFC1123Z)
 	}
 
-	data := HTMLReportData{
+	// Data for the main index.html (summary page)
+	summaryData := HTMLReportData{
 		Title:                                 b.reportTitle,
 		ParserName:                            b.parserName,
 		GeneratedAt:                           generatedAtStr,
-		Content:                               template.HTML("<p>Main content will be replaced by Angular app.</p>"),
+		Content:                               template.HTML("<app-root></app-root>"),
 		AngularCssFile:                        b.angularCssFile,
 		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
 		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
 		AngularMainJsFile:                     b.angularMainJsFile,
-		AssembliesJSON:                        template.JS("[]"), // Will be populated below
-		RiskHotspotsJSON:                      template.JS("[]"), // Will be populated below
-		MetricsJSON:                           template.JS("[]"), // Will be populated below
-		RiskHotspotMetricsJSON:                template.JS("[]"), // Will be populated below
-		HistoricCoverageExecutionTimesJSON:    template.JS("[]"), // Will be populated below
-		TranslationsJSON:                      template.JS("{}"), // Will be populated below
 		BranchCoverageAvailable:               b.branchCoverageAvailable,
 		MethodCoverageAvailable:               b.methodCoverageAvailable,
 		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
 	}
 
-	// Populate translations
 	b.translations = GetTranslations()
 	translationsJSONBytes, err := json.Marshal(b.translations)
 	if err != nil {
-		data.TranslationsJSON = template.JS("({})") 
+		b.translationsJSON = template.JS("({})")
 	} else {
-		data.TranslationsJSON = template.JS(translationsJSONBytes)
+		b.translationsJSON = template.JS(translationsJSONBytes)
 	}
-	b.translationsJSON = data.TranslationsJSON // Store for class pages
+	summaryData.TranslationsJSON = b.translationsJSON
 
-	// Populate AngularMetricViewModel slice (for window.metrics)
-	// These are the overall metrics available in the report.
-	// For now, we'll create a placeholder or extract from a predefined list if model doesn't directly provide this.
-	// This part will need refinement once we know how overall available metrics are determined from 'report *model.SummaryResult'.
-	// Based on C# HtmlRenderer.CustomSummary(), these are usually fixed metrics.
 	availableMetrics := []AngularMetricViewModel{
 		{Name: "NPath complexity", Abbreviation: "npath", ExplanationURL: "https://modess.io/npath-complexity-cyclomatic-complexity-explained/"},
 		{Name: "CrapScore", Abbreviation: "crap", ExplanationURL: "https://testing.googleblog.com/2011/02/this-code-is-crap.html"},
-		// Add other common metrics as needed, e.g., from C# ReportResources or common usage.
-		// {Name: "Cyclomatic Complexity", Abbreviation: "cyclomatic", ExplanationURL: "some_url"}, // Example
 	}
-	// In a more complete version, this list would be dynamically populated based on report.AvailableMetrics or similar
 	metricsJSONBytes, err := json.Marshal(availableMetrics)
 	if err != nil {
-		data.MetricsJSON = template.JS("([])")
+		b.metricsJSON = template.JS("([])")
 	} else {
-		data.MetricsJSON = template.JS(metricsJSONBytes)
+		b.metricsJSON = template.JS(metricsJSONBytes)
 	}
+	summaryData.MetricsJSON = b.metricsJSON
 
-	// Populate AngularRiskHotspotMetricHeaderViewModel slice (for window.riskHotspotMetrics)
-	// These are the headers for the risk hotspot table.
 	riskHotspotMetricHeaders := []AngularRiskHotspotMetricHeaderViewModel{
 		{Name: "Cyclomatic complexity", Abbreviation: "cyclomatic", ExplanationURL: "https://www.ndepend.com/docs/code-metrics#CC"},
 		{Name: "CrapScore", Abbreviation: "crap", ExplanationURL: "https://testing.googleblog.com/2011/02/this-code-is-crap.html"},
 		{Name: "NPath complexity", Abbreviation: "npath", ExplanationURL: "https://modess.io/npath-complexity-cyclomatic-complexity-explained/"},
-		// {Name: "Coverage", Abbreviation: "coverage", ExplanationURL: ""}, // Example, if needed
-		// {Name: "Something else", Abbreviation: "else", ExplanationURL: ""}, // Example
 	}
 	riskHotspotMetricsJSONBytes, err := json.Marshal(riskHotspotMetricHeaders)
 	if err != nil {
-		data.RiskHotspotMetricsJSON = template.JS("([])")
+		b.riskHotspotMetricsJSON = template.JS("([])")
 	} else {
-		data.RiskHotspotMetricsJSON = template.JS(riskHotspotMetricsJSONBytes)
+		b.riskHotspotMetricsJSON = template.JS(riskHotspotMetricsJSONBytes)
 	}
+	summaryData.RiskHotspotMetricsJSON = b.riskHotspotMetricsJSON
 
-	// Populate HistoricCoverageExecutionTimes
-	// Based on C# HtmlRenderer.CustomSummary(), this filters and formats these.
 	var executionTimes []string
 	uniqueExecutionTimestamps := make(map[int64]bool)
-
 	if report.Assemblies != nil {
 		for _, assembly := range report.Assemblies {
 			for _, class := range assembly.Classes {
 				for _, hist := range class.HistoricCoverages {
-					// hist.ExecutionTime is int64
 					if _, exists := uniqueExecutionTimestamps[hist.ExecutionTime]; !exists {
 						uniqueExecutionTimestamps[hist.ExecutionTime] = true
 					}
@@ -225,56 +197,53 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 			}
 		}
 	}
-
-	// Sort unique timestamps if order matters - prompt doesn't specify, so skipping for now
-	// but in a real scenario, sorting timestamps chronologically would be good.
-	// For example, collect keys from map, sort them, then format.
-
 	for ts := range uniqueExecutionTimestamps {
 		executionTimes = append(executionTimes, time.Unix(ts, 0).Format("2006-01-02 15:04:05"))
 	}
-	// If a specific order is required for executionTimes (e.g., chronological),
-	// they should be sorted here before marshalling. For now, map iteration order is used.
-
 	historicExecTimesJSONBytes, err := json.Marshal(executionTimes)
 	if err != nil {
-		data.HistoricCoverageExecutionTimesJSON = template.JS("([])") // Fallback to empty array
+		b.historicCoverageExecutionTimesJSON = template.JS("([])")
 	} else {
-		data.HistoricCoverageExecutionTimesJSON = template.JS(historicExecTimesJSONBytes)
+		b.historicCoverageExecutionTimesJSON = template.JS(historicExecTimesJSONBytes)
 	}
+	summaryData.HistoricCoverageExecutionTimesJSON = b.historicCoverageExecutionTimesJSON
 
-	// Populate AngularAssemblyViewModel slice (for window.assemblies)
 	var angularAssemblies []AngularAssemblyViewModel
-	existingFilenames := make(map[string]struct{}) // Initialize existingFilenames map
-
+	existingFilenames := make(map[string]struct{})
 	if report.Assemblies != nil {
-		for _, assembly := range report.Assemblies { // assembly is model.Assembly (struct)
-			// Use assembly.Name as model.Assembly does not have ShortName.
+		for _, assembly := range report.Assemblies {
 			assemblyShortName := assembly.Name
-
 			angularAssembly := AngularAssemblyViewModel{
-				Name:    assembly.Name, // This is for display in the Angular app.
+				Name:    assembly.Name,
 				Classes: []AngularClassViewModel{},
 			}
-
-			for _, class := range assembly.Classes { // class is model.Class (struct)
-				// Generate filename using class.Name (not class.DisplayName)
+			for _, class := range assembly.Classes {
 				classReportFilename := b.getClassReportFilename(assemblyShortName, class.Name, existingFilenames)
-
 				angularClass := AngularClassViewModel{
-					Name:                class.DisplayName,
-					ReportPath:          classReportFilename, // Populate ReportPath
-					CoveredLines:        class.LinesCovered,
-					CoverableLines:      class.LinesValid,
-					UncoveredLines:      class.LinesValid - class.LinesCovered,
-					TotalLines:          class.TotalLines,
-					CoveredMethods:      0, // Not directly available, set to 0
-					FullyCoveredMethods: 0, // Not directly available, set to 0
-					TotalMethods:        0, // Not directly available, set to 0
-					Metrics:             make(map[string]float64),
-					HistoricCoverages:   []AngularHistoricCoverageViewModel{},
+					Name:              class.DisplayName,
+					ReportPath:        classReportFilename,
+					CoveredLines:      class.LinesCovered,
+					CoverableLines:    class.LinesValid,
+					UncoveredLines:    class.LinesValid - class.LinesCovered,
+					TotalLines:        class.TotalLines,
+					Metrics:           make(map[string]float64),
+					HistoricCoverages: []AngularHistoricCoverageViewModel{},
 				}
-
+				if len(class.Methods) > 0 {
+					angularClass.TotalMethods = len(class.Methods)
+					coveredMethodCount := 0
+					fullCoveredMethodCount := 0
+					for _, m := range class.Methods {
+						if m.LineRate > 0 {
+							coveredMethodCount++
+						}
+						if m.LineRate >= (1.0-1e-9) && len(m.Lines) > 0 {
+							fullCoveredMethodCount++
+						}
+					}
+					angularClass.CoveredMethods = coveredMethodCount
+					angularClass.FullyCoveredMethods = fullCoveredMethodCount
+				}
 				if class.BranchesCovered != nil {
 					angularClass.CoveredBranches = *class.BranchesCovered
 				}
@@ -282,54 +251,38 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 					angularClass.TotalBranches = *class.BranchesValid
 				}
 
-				// Populate HistoricCoverages for the class
 				if class.HistoricCoverages != nil {
-					for _, hist := range class.HistoricCoverages { // hist is model.HistoricCoverage
-						angularHist := AngularHistoricCoverageViewModel{
-							ExecutionTime:   time.Unix(hist.ExecutionTime, 0).Format("2006-01-02"),
-							CoveredLines:    hist.CoveredLines,
-							CoverableLines:  hist.CoverableLines,
-							TotalLines:      hist.TotalLines, // Assuming this field exists on model.HistoricCoverage
-							CoveredBranches: hist.CoveredBranches,
-							TotalBranches:   hist.TotalBranches,
-						}
+					for _, hist := range class.HistoricCoverages {
+						angularHist := AngularHistoricCoverageViewModel{ExecutionTime: time.Unix(hist.ExecutionTime, 0).Format("2006-01-02"), CoveredLines: hist.CoveredLines, CoverableLines: hist.CoverableLines, TotalLines: hist.TotalLines, CoveredBranches: hist.CoveredBranches, TotalBranches: hist.TotalBranches}
 						if hist.CoverableLines > 0 {
-							angularHist.LineCoverageQuota = float64(hist.CoveredLines) / float64(hist.CoverableLines) * 100
+							angularHist.LineCoverageQuota = (float64(hist.CoveredLines) / float64(hist.CoverableLines)) * 100
 						}
 						if hist.TotalBranches > 0 {
-							angularHist.BranchCoverageQuota = float64(hist.CoveredBranches) / float64(hist.TotalBranches) * 100
+							angularHist.BranchCoverageQuota = (float64(hist.CoveredBranches) / float64(hist.TotalBranches)) * 100
 						}
 						angularClass.HistoricCoverages = append(angularClass.HistoricCoverages, angularHist)
-
-						// Populate history arrays (lch, bch, etc.)
-						// Ensure we only append valid quota values, e.g. > 0 or based on your logic for "valid" history points
-						if angularHist.LineCoverageQuota >= 0 { // Assuming 0 is a valid quota to record
+						if angularHist.LineCoverageQuota >= 0 {
 							angularClass.LineCoverageHistory = append(angularClass.LineCoverageHistory, angularHist.LineCoverageQuota)
 						}
-						if angularHist.BranchCoverageQuota >= 0 { // Assuming 0 is a valid quota to record
+						if angularHist.BranchCoverageQuota >= 0 {
 							angularClass.BranchCoverageHistory = append(angularClass.BranchCoverageHistory, angularHist.BranchCoverageQuota)
 						}
-						// MethodCoverageHistory and FullMethodCoverageHistory would require method-level historic data.
 					}
 				}
-
-				// Populate Metrics for the class by aggregating from methods
-				tempMetrics := make(map[string][]float64) // metric Name to list of values
+				tempMetrics := make(map[string][]float64)
 				if class.Methods != nil {
-					for _, method := range class.Methods { // method is model.Method
+					for _, method := range class.Methods {
 						if method.MethodMetrics != nil {
-							for _, methodMetric := range method.MethodMetrics { // methodMetric is model.MethodMetric
+							for _, methodMetric := range method.MethodMetrics {
 								if methodMetric.Metrics != nil {
-									for _, metric := range methodMetric.Metrics { // metric is model.Metric
-										if metric.Name == "" { // Use Name as key
+									for _, metric := range methodMetric.Metrics {
+										if metric.Name == "" {
 											continue
 										}
-										// Value is interface{}, attempt type assertion to float64
 										if valFloat, ok := metric.Value.(float64); ok {
-											tempMetrics[metric.Name] = append(tempMetrics[metric.Name], valFloat)
-										} else {
-											// Optionally log or handle metrics with unexpected types
-											// fmt.Fprintf(os.Stderr, "Metric %s has non-float64 value: %T\n", metric.Name, metric.Value)
+											if !math.IsNaN(valFloat) && !math.IsInf(valFloat, 0) {
+												tempMetrics[metric.Name] = append(tempMetrics[metric.Name], valFloat)
+											}
 										}
 									}
 								}
@@ -337,87 +290,37 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 						}
 					}
 				}
-				for name, values := range tempMetrics { // Use name instead of abbr
+				for name, values := range tempMetrics {
 					if len(values) > 0 {
 						var sum float64
 						for _, v := range values {
 							sum += v
 						}
-						angularClass.Metrics[name] = sum // Use name as key
+						angularClass.Metrics[name] = sum
 					}
 				}
-
 				angularAssembly.Classes = append(angularAssembly.Classes, angularClass)
 			}
 			angularAssemblies = append(angularAssemblies, angularAssembly)
 		}
 	}
-
 	assembliesJSONBytes, err := json.Marshal(angularAssemblies)
 	if err != nil {
-		data.AssembliesJSON = template.JS("([])")
+		b.assembliesJSON = template.JS("([])")
 	} else {
-		data.AssembliesJSON = template.JS(assembliesJSONBytes)
+		b.assembliesJSON = template.JS(assembliesJSONBytes)
 	}
-
-	// Populate AngularRiskHotspotViewModel slice (for window.riskHotspots)
-	// This requires a RiskHotspotAnalysisResult similar to C#'s.
-	// For now, creating placeholder/empty data or preparing a basic structure.
-	// The actual C# logic iterates `reportGenerator.RiskHotspotAnalysisResult.RiskHotspots`.
-	// We need to see if `report *model.SummaryResult` has something similar,
-	// or if we need to compute hotspots from scratch based on metrics in classes/methods.
+	summaryData.AssembliesJSON = b.assembliesJSON
 
 	var angularRiskHotspots []AngularRiskHotspotViewModel
-	// Placeholder: If you have a way to identify methods with high complexity metrics,
-	// you could iterate them here.
-	// Example: Iterate through assemblies, classes, files, methodmetrics
-	// For now, let's assume report.RiskHotspots exists or is empty.
-	// If report.RiskHotspots (or a similar field) is not available on model.SummaryResult,
-	// this will just result in an empty list, which is acceptable for this step.
-
-	/*
-		// Example of how it might look if data was available on report (conceptual)
-		if report.RiskHotspots != nil { // Assuming report.RiskHotspots is a slice of model.RiskHotspot
-			for _, rs := range report.RiskHotspots {
-				if rs == nil { continue }
-				angularRs := AngularRiskHotspotViewModel{
-					Assembly:    rs.AssemblyName,
-					Class:       rs.ClassName,
-					ReportPath:  rs.ReportPath, // Path to the class report HTML file
-					MethodName:  rs.MethodName,
-					MethodShortName: rs.MethodShortName, // Or derive from MethodName
-					FileIndex:   0, // This was related to a specific C# structure, may not map directly
-					Line:        rs.Line, // Starting line of the method
-					Metrics:     []AngularRiskHotspotStatusMetricViewModel{},
-				}
-
-				// Example: Populate metrics for the hotspot
-				// This would depend on what metrics are stored with model.RiskHotspot
-				// For instance, if rs.ComplexityMetric > rs.ComplexityThreshold
-				if rs.ComplexityMetricValue > 10 { // Example
-					angularRs.Metrics = append(angularRs.Metrics, AngularRiskHotspotStatusMetricViewModel{
-						Value:    fmt.Sprintf("%.0f", rs.ComplexityMetricValue),
-						Exceeded: true,
-					})
-				}
-				// Add other relevant metrics (e.g., CrapScore, NPath) if available on model.RiskHotspot
-
-				angularRiskHotspots = append(angularRiskHotspots, angularRs)
-			}
-		}
-	*/
-	// Since the structure of risk hotspots in the Go model is not yet defined
-	// or provided in report.SummaryResult, we will pass an empty array for now.
-	// This matches the "placeholder/empty data" requirement.
-
-	riskHotspotsJSONBytes, err := json.Marshal(angularRiskHotspots) // angularRiskHotspots is currently an empty slice
+	riskHotspotsJSONBytes, err := json.Marshal(angularRiskHotspots)
 	if err != nil {
-		data.RiskHotspotsJSON = template.JS("([])") // Corrected to use 'data'
+		b.riskHotspotsJSON = template.JS("([])")
 	} else {
-		data.RiskHotspotsJSON = template.JS(riskHotspotsJSONBytes) // Corrected to use 'data'
+		b.riskHotspotsJSON = template.JS(riskHotspotsJSONBytes)
 	}
+	summaryData.RiskHotspotsJSON = b.riskHotspotsJSON
 
-	// Create index.html file in the output directory
 	outputIndexPath := filepath.Join(b.OutputDir, "index.html")
 	file, err := os.Create(outputIndexPath)
 	if err != nil {
@@ -425,24 +328,17 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	}
 	defer file.Close()
 
-	// Execute the base template with the data
-	// baseTpl is parsed in templates.go and available in this package
-	if err := baseTpl.Execute(file, data); err != nil {
+	if err := baseTpl.Execute(file, summaryData); err != nil {
 		return fmt.Errorf("failed to execute base template into %s: %w", outputIndexPath, err)
 	}
-	file.Close() // Close index.html file before starting detail pages
+	file.Close()
 
-	// --- START: New loop for class detail pages (Step 6) ---
 	if !b.onlySummary {
-		// 'angularAssemblies' is the slice of AngularAssemblyViewModel populated earlier for the summary.
-		// report.Assemblies is the original model data.
 		for _, assemblyModel := range report.Assemblies {
-			for _, classModel := range assemblyModel.Classes { // classModel is of type model.Class
+			for _, classModel := range assemblyModel.Classes {
 				var classReportFilename string
 				foundFilename := false
-
-				// Find the classReportFilename for classModel from angularAssemblies
-				for _, asmView := range angularAssemblies { // Use 'angularAssemblies' which is in scope
+				for _, asmView := range angularAssemblies {
 					if asmView.Name == assemblyModel.Name {
 						for _, classView := range asmView.Classes {
 							if classView.Name == classModel.DisplayName {
@@ -456,271 +352,439 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 						break
 					}
 				}
-
 				if !foundFilename {
 					return fmt.Errorf("could not find pre-generated report filename for class: '%s' in assembly '%s'", classModel.DisplayName, assemblyModel.Name)
 				}
-
 				if classReportFilename == "" {
 					fmt.Fprintf(os.Stderr, "Warning: Empty report filename for class '%s' in assembly '%s', skipping detail page generation.\n", classModel.DisplayName, assemblyModel.Name)
 					continue
 				}
 
-				// Call generateClassDetailHTML, passing &classModel (pointer)
-				err := b.generateClassDetailHTML(&classModel, angularAssemblies, classReportFilename, b.translations) // Use 'angularAssemblies'
+				currentTag := ""
+				if b.ReportContext != nil {
+					if cfg := b.ReportContext.ReportConfiguration(); cfg != nil {
+						currentTag = cfg.Tag() // Call method
+					}
+				}
+				err := b.generateClassDetailHTML(&classModel, classReportFilename, currentTag)
+
 				if err != nil {
 					return fmt.Errorf("failed to generate detail page for class '%s' (file: %s): %w", classModel.DisplayName, classReportFilename, err)
 				}
 			}
 		}
 	}
-	// --- END: New loop for class detail pages ---
-
 	return nil
 }
 
-// TODO: Verify model.LineVisitStatus enum values once its definition is found.
-// Assuming: 0 for NotCoverable, 1 for Covered, 2 for NotCovered, 3 for PartiallyCovered.
 const (
-	lineVisitStatusNotCoverable     = 0 // Placeholder
-	lineVisitStatusCovered          = 1 // Placeholder
-	lineVisitStatusNotCovered       = 2 // Placeholder
-	lineVisitStatusPartiallyCovered = 3 // Placeholder
+	lineVisitStatusNotCoverable     = 0
+	lineVisitStatusCovered          = 1
+	lineVisitStatusNotCovered       = 2
+	lineVisitStatusPartiallyCovered = 3
 )
 
-// determineLineVisitStatus determines the line visit status based on coverage data.
 func determineLineVisitStatus(hits int, isBranchPoint bool, coveredBranches int, totalBranches int) int {
-	if hits > 0 {
-		if isBranchPoint {
-			if totalBranches == 0 {
-				return lineVisitStatusCovered // No branches to cover, so considered covered
-			} else if coveredBranches == totalBranches {
-				return lineVisitStatusCovered
-			} else if coveredBranches > 0 {
-				return lineVisitStatusPartiallyCovered
-			} else { // coveredBranches == 0
-				return lineVisitStatusNotCovered
-			}
-		} else { // Not a branch point
+	// Based on C# ReportGenerator.Core.Parser.Analysis.LineVisitStatus logic
+	// and how CoberturaParser sets it.
+	// If hits < 0, it's considered not coverable by some parsers.
+	if hits < 0 {
+		return lineVisitStatusNotCoverable
+	}
+
+	if isBranchPoint {
+		if totalBranches == 0 { // A branch point with no actual branches defined
+			return lineVisitStatusNotCoverable // Or Covered if hits > 0, C# seems to lean towards NotCoverable if no branches
+		}
+		if coveredBranches == totalBranches {
 			return lineVisitStatusCovered
 		}
-	} else { // hits == 0
+		if coveredBranches > 0 {
+			return lineVisitStatusPartiallyCovered
+		}
+		// hits can be > 0 but coveredBranches == 0 if the line itself was hit but no branches taken
+		// or hits == 0 and coveredBranches == 0
 		return lineVisitStatusNotCovered
 	}
+
+	// Not a branch point
+	if hits > 0 {
+		return lineVisitStatusCovered
+	}
+	return lineVisitStatusNotCovered
 }
 
-func lineVisitStatusToString(status int) string { // Assuming status is int for now
+func lineVisitStatusToString(status int) string {
 	switch status {
 	case lineVisitStatusCovered:
-		return "covered"
+		return "green" // Used for CSS class .lightgreen
 	case lineVisitStatusNotCovered:
-		return "uncovered"
+		return "red" // Used for CSS class .lightred
 	case lineVisitStatusPartiallyCovered:
-		return "partiallycovered"
-	default: // lineVisitStatusNotCoverable and any other undefined states
-		return "notcoverable"
+		return "orange" // Used for CSS class .lightorange
+	case lineVisitStatusNotCoverable:
+		return "gray" // Used for CSS class .lightgray (though C# often just uses empty for this)
+	default:
+		return "gray"
 	}
 }
 
-// generateClassDetailHTML generates the HTML page for a single class.
-func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, allAssembliesForAngular []AngularAssemblyViewModel, classReportFilename string, translations map[string]string) error {
-	// 1. Prepare AngularClassViewModel for the current class (currentClassVM)
-	currentClassVM := AngularClassViewModel{
-		Name:                classModel.DisplayName,
-		ReportPath:          "", // Current page
-		CoveredLines:        classModel.LinesCovered,
-		UncoveredLines:      classModel.LinesValid - classModel.LinesCovered,
-		CoverableLines:      classModel.LinesValid,
-		TotalLines:          classModel.TotalLines,
-		CoveredMethods:      0, // Placeholder, requires method-level analysis within classModel
-		FullyCoveredMethods: 0, // Placeholder
-		TotalMethods:        0, // Placeholder
-		Metrics:             make(map[string]float64),
-		HistoricCoverages:   []AngularHistoricCoverageViewModel{},
-		// LineCoverageHistory, BranchCoverageHistory, etc. will be populated from HistoricCoverages
+func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, classReportFilename string, tag string) error {
+	classVM := ClassViewModelForDetail{
+		Name: classModel.DisplayName,
 	}
-	if classModel.BranchesCovered != nil {
-		currentClassVM.CoveredBranches = *classModel.BranchesCovered
-	}
-	if classModel.BranchesValid != nil {
-		currentClassVM.TotalBranches = *classModel.BranchesValid
+	if dotIndex := strings.LastIndex(classModel.Name, "."); dotIndex > -1 {
+		classVM.AssemblyName = classModel.Name[:dotIndex]
+	} else {
+		classVM.AssemblyName = "Default"
 	}
 
-	// Populate HistoricCoverages for the class (similar to summary page logic for a class)
+	classVM.CoveredLines = classModel.LinesCovered
+	classVM.CoverableLines = classModel.LinesValid
+	classVM.UncoveredLines = classVM.CoverableLines - classVM.CoveredLines
+	classVM.TotalLines = classModel.TotalLines
+
+	if classVM.CoverableLines > 0 {
+		lineCoverage := (float64(classVM.CoveredLines) / float64(classVM.CoverableLines)) * 100.0
+		classVM.CoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", lineCoverage)
+		classVM.CoveragePercentageBarValue = 100 - int(math.Round(lineCoverage))
+		classVM.CoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", classVM.CoveredLines, classVM.CoverableLines)
+	} else {
+		classVM.CoveragePercentageForDisplay = "N/A"
+		classVM.CoveragePercentageBarValue = 0
+		classVM.CoverageRatioTextForDisplay = "-"
+	}
+
+	if classModel.BranchesValid != nil && *classModel.BranchesValid > 0 && classModel.BranchesCovered != nil {
+		classVM.CoveredBranches = *classModel.BranchesCovered
+		classVM.TotalBranches = *classModel.BranchesValid
+		branchCoverage := (float64(classVM.CoveredBranches) / float64(classVM.TotalBranches)) * 100.0
+		classVM.BranchCoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", branchCoverage)
+		classVM.BranchCoveragePercentageBarValue = 100 - int(math.Round(branchCoverage))
+		classVM.BranchCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", classVM.CoveredBranches, classVM.TotalBranches)
+	} else {
+		classVM.BranchCoveragePercentageForDisplay = "N/A"
+		classVM.BranchCoveragePercentageBarValue = 0
+		classVM.BranchCoverageRatioTextForDisplay = "-"
+	}
+
+	classVM.TotalMethods = len(classModel.Methods)
+	if classVM.TotalMethods > 0 {
+		coveredMethodCount := 0
+		fullCoveredMethodCount := 0
+		for _, m := range classModel.Methods {
+			if m.LineRate > 0 {
+				coveredMethodCount++
+			}
+			if m.LineRate >= (1.0-1e-9) && len(m.Lines) > 0 {
+				fullCoveredMethodCount++
+			}
+		}
+		classVM.CoveredMethods = coveredMethodCount
+		classVM.FullyCoveredMethods = fullCoveredMethodCount
+		methodCov := (float64(classVM.CoveredMethods) / float64(classVM.TotalMethods)) * 100.0
+		fullMethodCovVal := (float64(classVM.FullyCoveredMethods) / float64(classVM.TotalMethods)) * 100.0
+		classVM.MethodCoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", methodCov)
+		classVM.MethodCoveragePercentageBarValue = 100 - int(math.Round(methodCov))
+		classVM.MethodCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", classVM.CoveredMethods, classVM.TotalMethods)
+		classVM.FullMethodCoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", fullMethodCovVal)
+		classVM.FullMethodCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", classVM.FullyCoveredMethods, classVM.TotalMethods)
+	} else {
+		classVM.MethodCoveragePercentageForDisplay = "N/A"
+		classVM.MethodCoveragePercentageBarValue = 0
+		classVM.MethodCoverageRatioTextForDisplay = "-"
+		classVM.FullMethodCoveragePercentageForDisplay = "N/A"
+		classVM.FullMethodCoverageRatioTextForDisplay = "-"
+	}
+	classVM.IsMultiFile = len(classModel.Files) > 1
+
+	var serverSideHistoricCoverages []AngularHistoricCoverageViewModel   // For server-side template, if needed for charts directly
+	var angularHistoricCoveragesForJS []AngularHistoricCoverageViewModel // For JS window.classDetails.class.hc
+	var lineCoverageHistoryForJS []float64
+	var branchCoverageHistoryForJS []float64
+
 	if classModel.HistoricCoverages != nil {
 		for _, hist := range classModel.HistoricCoverages {
 			angularHist := AngularHistoricCoverageViewModel{
-				ExecutionTime:   time.Unix(hist.ExecutionTime, 0).Format("2006-01-02"),
-				CoveredLines:    hist.CoveredLines,
-				CoverableLines:  hist.CoverableLines,
-				TotalLines:      hist.TotalLines,
-				CoveredBranches: hist.CoveredBranches,
-				TotalBranches:   hist.TotalBranches,
+				ExecutionTime: time.Unix(hist.ExecutionTime, 0).Format("2006-01-02"), CoveredLines: hist.CoveredLines, CoverableLines: hist.CoverableLines,
+				TotalLines: hist.TotalLines, CoveredBranches: hist.CoveredBranches, TotalBranches: hist.TotalBranches,
 			}
 			if hist.CoverableLines > 0 {
-				angularHist.LineCoverageQuota = float64(hist.CoveredLines) / float64(hist.CoverableLines) * 100
+				angularHist.LineCoverageQuota = (float64(hist.CoveredLines) / float64(hist.CoverableLines)) * 100.0
 			}
 			if hist.TotalBranches > 0 {
-				angularHist.BranchCoverageQuota = float64(hist.CoveredBranches) / float64(hist.TotalBranches) * 100
+				angularHist.BranchCoverageQuota = (float64(hist.CoveredBranches) / float64(hist.TotalBranches)) * 100.0
 			}
-			currentClassVM.HistoricCoverages = append(currentClassVM.HistoricCoverages, angularHist)
+
+			serverSideHistoricCoverages = append(serverSideHistoricCoverages, angularHist)     // If template renders charts
+			angularHistoricCoveragesForJS = append(angularHistoricCoveragesForJS, angularHist) // For JS
 			if angularHist.LineCoverageQuota >= 0 {
-				currentClassVM.LineCoverageHistory = append(currentClassVM.LineCoverageHistory, angularHist.LineCoverageQuota)
+				lineCoverageHistoryForJS = append(lineCoverageHistoryForJS, angularHist.LineCoverageQuota)
 			}
 			if angularHist.BranchCoverageQuota >= 0 {
-				currentClassVM.BranchCoverageHistory = append(currentClassVM.BranchCoverageHistory, angularHist.BranchCoverageQuota)
+				branchCoverageHistoryForJS = append(branchCoverageHistoryForJS, angularHist.BranchCoverageQuota)
 			}
 		}
 	}
+	classVM.HistoricCoverages = serverSideHistoricCoverages    // For Go template
+	classVM.LineCoverageHistory = lineCoverageHistoryForJS     // For Go template, if it renders mini charts
+	classVM.BranchCoverageHistory = branchCoverageHistoryForJS // For Go template
 
-	// Populate Metrics for the class (similar to summary page logic for a class)
-	tempMetrics := make(map[string][]float64)
+	classAggregatedMetrics := make(map[string]float64)
 	if classModel.Methods != nil {
 		for _, method := range classModel.Methods {
-			if method.MethodMetrics != nil {
-				for _, methodMetric := range method.MethodMetrics {
-					if methodMetric.Metrics != nil {
-						for _, metric := range methodMetric.Metrics {
-							if metric.Name == "" {
-								continue
-							}
-							if valFloat, ok := metric.Value.(float64); ok {
-								tempMetrics[metric.Name] = append(tempMetrics[metric.Name], valFloat)
-							}
+			for _, methodMetric := range method.MethodMetrics {
+				for _, metric := range methodMetric.Metrics {
+					if valFloat, ok := metric.Value.(float64); ok {
+						if !math.IsNaN(valFloat) && !math.IsInf(valFloat, 0) {
+							classAggregatedMetrics[metric.Name] += valFloat
 						}
 					}
 				}
 			}
 		}
 	}
-	for name, values := range tempMetrics {
-		if len(values) > 0 {
-			var sum float64
-			for _, v := range values {
-				sum += v
+	classVM.Metrics = classAggregatedMetrics
+
+	var allMethodMetricsForClass []*model.MethodMetric
+	for fileIdx, fileInClass := range classModel.Files {
+		sourceFileLines, _ := filereader.ReadLinesInFile(fileInClass.Path)
+		fileVM := FileViewModelForDetail{Path: fileInClass.Path, ShortPath: sanitizeFilenameChars.ReplaceAllString(filepath.Base(fileInClass.Path), "_")}
+		coverageLinesMap := make(map[int]*model.Line)
+		for i := range fileInClass.Lines {
+			covLine := &fileInClass.Lines[i]
+			coverageLinesMap[covLine.Number] = covLine
+		}
+		for lineNumIdx, lineContent := range sourceFileLines {
+			actualLineNumber := lineNumIdx + 1
+			modelCovLine, hasCoverageData := coverageLinesMap[actualLineNumber]
+			lineVM := LineViewModelForDetail{LineNumber: actualLineNumber, LineContent: lineContent}
+			dataCoverageMap := map[string]map[string]string{"AllTestMethods": {"VC": "", "LVS": "gray"}}
+			if hasCoverageData {
+				lineVM.Hits = fmt.Sprintf("%d", modelCovLine.Hits)
+				status := determineLineVisitStatus(modelCovLine.Hits, modelCovLine.IsBranchPoint, modelCovLine.CoveredBranches, modelCovLine.TotalBranches)
+				lineVM.LineVisitStatus = lineVisitStatusToString(status)
+				if modelCovLine.IsBranchPoint && modelCovLine.TotalBranches > 0 {
+					lineVM.IsBranch = true
+					branchCoverageVal := (float64(modelCovLine.CoveredBranches) / float64(modelCovLine.TotalBranches)) * 100.0
+					lineVM.BranchBarValue = 100 - int(math.Round(branchCoverageVal))
+				}
+				dataCoverageMap["AllTestMethods"]["VC"] = fmt.Sprintf("%d", modelCovLine.Hits)
+				dataCoverageMap["AllTestMethods"]["LVS"] = lineVM.LineVisitStatus
+				tooltipBranchRate := ""
+				if lineVM.IsBranch {
+					tooltipBranchRate = fmt.Sprintf(", %d of %d branches are covered", modelCovLine.CoveredBranches, modelCovLine.TotalBranches)
+				}
+				switch status {
+				case lineVisitStatusCovered:
+					lineVM.Tooltip = fmt.Sprintf("Covered (%d visits%s)", modelCovLine.Hits, tooltipBranchRate)
+				case lineVisitStatusNotCovered:
+					lineVM.Tooltip = fmt.Sprintf("Not covered (%d visits%s)", modelCovLine.Hits, tooltipBranchRate)
+				case lineVisitStatusPartiallyCovered:
+					lineVM.Tooltip = fmt.Sprintf("Partially covered (%d visits%s)", modelCovLine.Hits, tooltipBranchRate)
+				default:
+					lineVM.Tooltip = "Not coverable"
+				}
+			} else {
+				lineVM.LineVisitStatus = "gray"
+				lineVM.Hits = ""
+				lineVM.Tooltip = "Not coverable"
 			}
-			currentClassVM.Metrics[name] = sum
+			dataCoverageBytes, _ := json.Marshal(dataCoverageMap)
+			lineVM.DataCoverage = template.JS(dataCoverageBytes)
+			fileVM.Lines = append(fileVM.Lines, lineVM)
+		}
+		classVM.Files = append(classVM.Files, fileVM)
+		for i := range fileInClass.MethodMetrics {
+			allMethodMetricsForClass = append(allMethodMetricsForClass, &fileInClass.MethodMetrics[i])
+		}
+		for _, codeElem := range fileInClass.CodeElements {
+			sidebarElem := SidebarElementViewModel{Name: codeElem.Name, FileShortPath: fileVM.ShortPath, FileIndexPlus1: fileIdx + 1, Line: codeElem.FirstLine, Icon: "cube"}
+			if codeElem.Type == model.PropertyElementType {
+				sidebarElem.Icon = "wrench"
+			}
+			if codeElem.CoverageQuota != nil {
+				sidebarElem.CoverageBarValue = 100 - int(math.Round(*codeElem.CoverageQuota))
+				sidebarElem.CoverageTitle = fmt.Sprintf("Line coverage: %.1f%%", *codeElem.CoverageQuota)
+			} else {
+				sidebarElem.CoverageBarValue = 0
+				sidebarElem.CoverageTitle = "Line coverage: N/A"
+			}
+			classVM.SidebarElements = append(classVM.SidebarElements, sidebarElem)
 		}
 	}
 
-	// 2. Prepare Files (slice of AngularCodeFileViewModel)
-	var angularCodeFiles []AngularCodeFileViewModel
+	if len(allMethodMetricsForClass) > 0 {
+		classVM.FilesWithMetrics = true
+		metricsTable := MetricsTableViewModel{}
+		seenMetricTypes := make(map[string]AngularMetricDefinitionViewModel)
+		orderedMetricNames := []string{}
+		for _, modelMM := range allMethodMetricsForClass {
+			for _, modelMetric := range modelMM.Metrics {
+				if _, found := seenMetricTypes[modelMetric.Name]; !found {
+					var explURL string
+					switch modelMetric.Name {
+					case "Cyclomatic Complexity":
+						explURL = "https://en.wikipedia.org/wiki/Cyclomatic_complexity"
+					case "CrapScore":
+						explURL = "https://testing.googleblog.com/2011/02/this-code-is-crap.html"
+					case "Line coverage", "Branch coverage":
+						explURL = "https://en.wikipedia.org/wiki/Code_coverage"
+					}
+					seenMetricTypes[modelMetric.Name] = AngularMetricDefinitionViewModel{Name: modelMetric.Name, ExplanationURL: explURL}
+					orderedMetricNames = append(orderedMetricNames, modelMetric.Name)
+				}
+			}
+		}
+		sort.Strings(orderedMetricNames)
+		for _, name := range orderedMetricNames {
+			metricsTable.Headers = append(metricsTable.Headers, seenMetricTypes[name])
+		}
+		methodMetricToFileContext := make(map[*model.MethodMetric]struct {
+			Index     int
+			ShortPath string
+		})
+		for fIdx, f := range classModel.Files {
+			for i := range f.MethodMetrics {
+				mmPtr := &f.MethodMetrics[i]
+				methodMetricToFileContext[mmPtr] = struct {
+					Index     int
+					ShortPath string
+				}{Index: fIdx, ShortPath: sanitizeFilenameChars.ReplaceAllString(filepath.Base(f.Path), "_")}
+			}
+		}
+		for _, modelMM := range allMethodMetricsForClass {
+			fileCtx, _ := methodMetricToFileContext[modelMM]
+			var correspondingCE *model.CodeElement
+			var methodLineCoverageQuota *float64
+			isProperty := false
+			for _, f := range classModel.Files {
+				for _, ce := range f.CodeElements {
+					if ce.FirstLine == modelMM.Line && strings.HasPrefix(ce.FullName, modelMM.Name) {
+						correspondingCE = &ce
+						break
+					}
+				}
+				if correspondingCE != nil {
+					break
+				}
+			}
+			if correspondingCE != nil {
+				methodLineCoverageQuota = correspondingCE.CoverageQuota
+				isProperty = (correspondingCE.Type == model.PropertyElementType)
+			}
+			row := AngularMethodMetricsViewModel{Name: modelMM.Name, FullName: modelMM.Name, FileIndexPlus1: fileCtx.Index + 1, Line: modelMM.Line, FileShortPath: fileCtx.ShortPath, MetricValues: make([]string, len(metricsTable.Headers)), IsProperty: isProperty, CoverageQuota: methodLineCoverageQuota}
+			currentMethodValues := make(map[string]string)
+			for _, metric := range modelMM.Metrics {
+				valStr := "-"
+				if metric.Value != nil {
+					if valFloat, ok := metric.Value.(float64); ok {
+						if math.IsNaN(valFloat) {
+							valStr = "NaN"
+						} else {
+							if metric.Name == "Line coverage" || metric.Name == "Branch coverage" {
+								valStr = fmt.Sprintf("%.1f%%", valFloat)
+							} else {
+								valStr = fmt.Sprintf("%.0f", valFloat)
+							}
+						}
+					} else if valInt, okInt := metric.Value.(int); okInt {
+						valStr = fmt.Sprintf("%d", valInt)
+					}
+				}
+				currentMethodValues[metric.Name] = valStr
+			}
+			for i, header := range metricsTable.Headers {
+				if val, ok := currentMethodValues[header.Name]; ok {
+					row.MetricValues[i] = val
+				} else {
+					row.MetricValues[i] = "-"
+				}
+			}
+			metricsTable.Rows = append(metricsTable.Rows, row)
+		}
+		classVM.MetricsTable = metricsTable
+	}
+
+	angularClassVMForJS := AngularClassViewModel{
+		Name: classModel.DisplayName, CoveredLines: classModel.LinesCovered, UncoveredLines: classModel.LinesValid - classModel.LinesCovered,
+		CoverableLines: classModel.LinesValid, TotalLines: classModel.TotalLines,
+		CoveredMethods: classVM.CoveredMethods, FullyCoveredMethods: classVM.FullyCoveredMethods, TotalMethods: classVM.TotalMethods,
+		HistoricCoverages: angularHistoricCoveragesForJS, LineCoverageHistory: lineCoverageHistoryForJS, BranchCoverageHistory: branchCoverageHistoryForJS,
+		Metrics: classVM.Metrics,
+	}
+	if classModel.BranchesCovered != nil {
+		angularClassVMForJS.CoveredBranches = *classModel.BranchesCovered
+	}
+	if classModel.BranchesValid != nil {
+		angularClassVMForJS.TotalBranches = *classModel.BranchesValid
+	}
+
+	angularClassDetailForJS := AngularClassDetailViewModel{Class: angularClassVMForJS, Files: []AngularCodeFileViewModel{}}
 	if classModel.Files != nil {
-		for _, fileInClass := range classModel.Files { // fileInClass is model.CodeFile
-			// Read source file lines
-			sourceFileLines, err := filereader.ReadLinesInFile(fileInClass.Path)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not read source file %s for class %s for line content: %v\n", fileInClass.Path, classModel.DisplayName, err)
-				sourceFileLines = []string{} // Use empty slice if file read fails
-			}
-
-			angularFile := AngularCodeFileViewModel{
-				Path:           fileInClass.Path,
-				CoveredLines:   fileInClass.CoveredLines,   // Specific to this file's part in the class
-				CoverableLines: fileInClass.CoverableLines, // Specific to this file's part
-				TotalLines:     fileInClass.TotalLines,     // Total physical lines in this source file
-				Lines:          []AngularLineAnalysisViewModel{},
-				MethodMetrics:  []AngularMethodMetricViewModel{}, // Placeholder as model.CodeFile doesn't have MethodMetrics
-				CodeElements:   []AngularCodeElementViewModel{},  // Placeholder as model.CodeFile doesn't have CodeElements
-			}
-
-			// Create a map for quick lookup of coverage data
+		for _, fileInClass := range classModel.Files {
+			sourceFileLines, _ := filereader.ReadLinesInFile(fileInClass.Path)
+			angularFileForJS := AngularCodeFileViewModel{Path: fileInClass.Path, CoveredLines: fileInClass.CoveredLines, CoverableLines: fileInClass.CoverableLines, TotalLines: fileInClass.TotalLines, Lines: []AngularLineAnalysisViewModel{}}
 			coverageLinesMap := make(map[int]*model.Line)
 			if fileInClass.Lines != nil {
-				for i := range fileInClass.Lines { // Iterate by index to get pointer
+				for i := range fileInClass.Lines {
 					covLine := &fileInClass.Lines[i]
 					coverageLinesMap[covLine.Number] = covLine
 				}
 			}
-
-			var processedLines []AngularLineAnalysisViewModel
 			for i, content := range sourceFileLines {
 				actualLineNumber := i + 1
-				currentLineContent := content
-
-				var hits int
-				var isBranchPoint bool
-				var coveredBranches int
-				var totalBranches int
-				var lineVisitStatusString string
-
 				modelCovLine, hasCoverageData := coverageLinesMap[actualLineNumber]
-
+				var hits, coveredBranches, totalBranches int
+				var lineVisitStatusString string
 				if hasCoverageData {
 					hits = modelCovLine.Hits
-					isBranchPoint = modelCovLine.IsBranchPoint
 					coveredBranches = modelCovLine.CoveredBranches
 					totalBranches = modelCovLine.TotalBranches
-					status := determineLineVisitStatus(hits, isBranchPoint, coveredBranches, totalBranches)
-					lineVisitStatusString = lineVisitStatusToString(status)
+					lineVisitStatusString = lineVisitStatusToString(determineLineVisitStatus(hits, modelCovLine.IsBranchPoint, coveredBranches, totalBranches))
 				} else {
-					hits = 0
-					isBranchPoint = false
-					coveredBranches = 0
-					totalBranches = 0
-					lineVisitStatusString = "notcoverable" // Explicitly mark as notcoverable
+					lineVisitStatusString = lineVisitStatusToString(lineVisitStatusNotCoverable)
 				}
-
-				angularLine := AngularLineAnalysisViewModel{
-					LineNumber:      actualLineNumber,
-					LineContent:     currentLineContent,
-					Hits:            hits,
-					LineVisitStatus: lineVisitStatusString,
-					CoveredBranches: coveredBranches,
-					TotalBranches:   totalBranches,
-				}
-				processedLines = append(processedLines, angularLine)
+				angularFileForJS.Lines = append(angularFileForJS.Lines, AngularLineAnalysisViewModel{LineNumber: actualLineNumber, LineContent: content, Hits: hits, LineVisitStatus: lineVisitStatusString, CoveredBranches: coveredBranches, TotalBranches: totalBranches})
 			}
-			angularFile.Lines = processedLines
-			angularCodeFiles = append(angularCodeFiles, angularFile)
+			angularClassDetailForJS.Files = append(angularClassDetailForJS.Files, angularFileForJS)
 		}
 	}
-
-	// 3. Assemble AngularClassDetailViewModel
-	classDetailVM := AngularClassDetailViewModel{
-		Class: currentClassVM,
-		Files: angularCodeFiles,
-	}
-
-	// 4. Marshal to JSON
-	classDetailJSONBytes, err := json.Marshal(classDetailVM)
+	classDetailJSONBytes, err := json.Marshal(angularClassDetailForJS)
 	if err != nil {
-		return fmt.Errorf("failed to marshal class detail view model for %s: %w", classModel.DisplayName, err)
-	}
-	assembliesJSONBytes, err := json.Marshal(allAssembliesForAngular)
-	if err != nil {
-		return fmt.Errorf("failed to marshal all assemblies for %s: %w", classModel.DisplayName, err)
-	}
-	translationsJSONBytes, err := json.Marshal(translations)
-	if err != nil {
-		return fmt.Errorf("failed to marshal translations for %s: %w", classModel.DisplayName, err)
+		return fmt.Errorf("failed to marshal Angular class detail JSON for %s: %w", classModel.DisplayName, err)
 	}
 
-	// 5. Prepare HTMLReportData
-	generatedAtStr := "N/A"
-	if b.reportTimestamp != 0 {
-		generatedAtStr = time.Unix(b.reportTimestamp, 0).Format(time.RFC1123Z)
+	var appVersion string
+	if b.ReportContext.ReportConfiguration != nil { // Check for nil before accessing
+		// Assuming AppVersion is a constant or from a config, not directly on IReportConfiguration
+		// For now, hardcoding a placeholder. In a real app, this would come from build info or similar.
+		appVersion = "0.0.1" // Placeholder
 	}
 
-	htmlData := HTMLReportData{
-		Title:                                 classModel.DisplayName, // Page title is class name
-		ParserName:                            b.parserName,
-		GeneratedAt:                           generatedAtStr,
+	templateData := ClassDetailData{
+		ReportTitle:                           b.reportTitle,
+		AppVersion:                            appVersion,
+		CurrentDateTime:                       time.Now().Format("02/01/2006 - 15:04:05"),
+		Class:                                 classVM,
+		BranchCoverageAvailable:               b.branchCoverageAvailable,
+		MethodCoverageAvailable:               b.methodCoverageAvailable,
+		Tag:                                   tag,
+		Translations:                          b.translations,
+		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
 		AngularCssFile:                        b.angularCssFile,
 		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
 		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
 		AngularMainJsFile:                     b.angularMainJsFile,
-		AssembliesJSON:                        template.JS(assembliesJSONBytes),
-		TranslationsJSON:                      template.JS(translationsJSONBytes),
+		AssembliesJSON:                        b.assembliesJSON,
+		RiskHotspotsJSON:                      b.riskHotspotsJSON,
+		MetricsJSON:                           b.metricsJSON,
+		RiskHotspotMetricsJSON:                b.riskHotspotMetricsJSON,
+		HistoricCoverageExecutionTimesJSON:    b.historicCoverageExecutionTimesJSON,
+		TranslationsJSON:                      b.translationsJSON,
 		ClassDetailJSON:                       template.JS(classDetailJSONBytes),
-		BranchCoverageAvailable:               b.branchCoverageAvailable,
-		MethodCoverageAvailable:               b.methodCoverageAvailable,
-		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
-		// RiskHotspotsJSON, MetricsJSON, RiskHotspotMetricsJSON, HistoricCoverageExecutionTimesJSON are not directly needed for class detail page's primary data
-		// Content is also not needed as Angular takes over.
 	}
 
-	// 6. Render HTML
 	outputFilePath := filepath.Join(b.OutputDir, classReportFilename)
 	fileWriter, err := os.Create(outputFilePath)
 	if err != nil {
@@ -728,17 +792,12 @@ func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, all
 	}
 	defer fileWriter.Close()
 
-	// Assuming baseTpl is parsed and available (e.g., in templates.go)
-	// Use Execute to render the main template associated with baseTpl (named "base").
-	if err := baseTpl.Execute(fileWriter, htmlData); err != nil {
-		return fmt.Errorf("failed to execute template for class report %s: %w", outputFilePath, err)
+	if err := classDetailTpl.Execute(fileWriter, templateData); err != nil {
+		return fmt.Errorf("failed to execute class detail template for report %s: %w", outputFilePath, err)
 	}
-
 	return nil
 }
 
-// getClassReportFilename generates a unique filename for a class report.
-// It mirrors the logic of C#'s HtmlRenderer.GetClassReportFilename().
 func (b *HtmlReportBuilder) getClassReportFilename(assemblyShortName, className string, existingFilenames map[string]struct{}) string {
 	// Process className to get the short name
 	processedClassName := className
@@ -842,12 +901,11 @@ func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (
 	f(doc)
 
 	// Basic validation: check if any of the crucial files were not found
+	// Allow polyfills to be missing as some Angular configs might not emit it
 	if cssFile == "" {
 		err = fmt.Errorf("could not find Angular CSS file in %s", angularIndexHTMLPath)
 	} else if runtimeJs == "" {
 		err = fmt.Errorf("could not find Angular runtime.js file in %s", angularIndexHTMLPath)
-	} else if polyfillsJs == "" {
-		err = fmt.Errorf("could not find Angular polyfills.js file in %s", angularIndexHTMLPath)
 	} else if mainJs == "" {
 		err = fmt.Errorf("could not find Angular main.js file in %s", angularIndexHTMLPath)
 	}
@@ -861,7 +919,7 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 	srcInfo, err := os.Stat(angularDistSourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("angular source directory %s does not exist: %w", angularDistSourcePath, err)
+			return fmt.Errorf("angular source directory %s does not exist: %w. Make sure to build the Angular app first ('npm run build' in 'go_report_generator/angular_frontend_spa')", angularDistSourcePath, err)
 		}
 		return fmt.Errorf("failed to stat angular source directory %s: %w", angularDistSourcePath, err)
 	}
@@ -923,7 +981,6 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 }
 
 // copyStaticAssets copies static assets to the output directory.
-// Note: outputDir argument was removed as b.OutputDir is used directly.
 func (b *HtmlReportBuilder) copyStaticAssets() error {
 	filesToCopy := []string{
 		"custom.css",

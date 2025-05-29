@@ -2,8 +2,10 @@ package analyzer
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
@@ -77,7 +79,14 @@ func Analyze(rawReport *inputxml.CoberturaRoot, sourceDirs []string) (*model.Sum
 func parseInt(s string) int { v, _ := strconv.Atoi(s); return v }
 
 // parseFloat is a utility function to parse string to float64, ignoring errors.
-func parseFloat(s string) float64 { v, _ := strconv.ParseFloat(s, 64); return v }
+func parseFloat(s string) float64 {
+	if strings.ToLower(s) == "nan" { // Handle "NaN" case-insensitively
+		return math.NaN() // Or return 0 or a specific indicator if preferred
+	}
+	v, _ := strconv.ParseFloat(s, 64)
+	return v
+}
+
 
 // isValidUnixSeconds checks if a timestamp (in seconds) is within a reasonable range.
 // E.g., between 1975-01-01 and 2100-01-01.

@@ -38,11 +38,28 @@ type Class struct {
 
 type CodeFile struct {
 	Path           string
-	Lines          []Line // Coverage data for lines in this file
-	CoveredLines   int    // Specific to this file's part
-	CoverableLines int    // Specific to this file's part
-	TotalLines     int    // Total physical lines in this source file
-	// Branches specific to this file's part
+	Lines          []Line 
+	CoveredLines   int    
+	CoverableLines int    
+	TotalLines     int    
+	MethodMetrics  []MethodMetric // Metrics for methods within this file
+	CodeElements   []CodeElement  // Code elements (methods/properties) in this file
+}
+
+type CodeElementType int
+
+const (
+	PropertyElementType CodeElementType = iota
+	MethodElementType
+)
+
+type CodeElement struct {
+	Name            string
+	FullName        string // For uniqueness, e.g., with signature
+	Type            CodeElementType
+	FirstLine       int
+	LastLine        int
+	CoverageQuota   *float64 // Nullable (percentage 0-100)
 }
 
 type Method struct {

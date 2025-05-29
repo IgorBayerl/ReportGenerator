@@ -2,8 +2,10 @@ package analyzer
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
@@ -45,66 +47,109 @@ func findFileInSourceDirs(relativePath string, sourceDirs []string) (string, err
 // It creates a model.CodeFile, populates its lines, and calculates metrics for this fragment.
 // It updates uniqueFilePathsForGrandTotalLines with the total line count if the file is processed for the first time.
 func processCodeFileFragment(
-	classXML inputxml.ClassXML,
+	classXML inputxml.ClassXML, // Pass the whole classXML
 	sourceDirs []string,
 	uniqueFilePathsForGrandTotalLines map[string]int,
 ) (*model.CodeFile, fileProcessingMetrics, error) {
+
 	metrics := fileProcessingMetrics{}
-	codeFile := model.CodeFile{Path: classXML.Filename}
-	var sourceLines []string // Declare sourceLines
+	codeFile := model.CodeFile{Path: classXML.Filename, MethodMetrics: []model.MethodMetric{}, CodeElements: []model.CodeElement{}} // Initialize slices
+	var sourceLines []string
 
 	resolvedPath, err := findFileInSourceDirs(classXML.Filename, sourceDirs)
 	if err == nil {
-		codeFile.Path = resolvedPath // Use resolved absolute path
-
-		// Read source file content
+		codeFile.Path = resolvedPath
 		sLines, readErr := filereader.ReadLinesInFile(resolvedPath)
 		if readErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not read content of source file %s: %v\n", resolvedPath, readErr)
-			sourceLines = []string{} // Ensure sourceLines is empty on error
+			sourceLines = []string{}
 		} else {
 			sourceLines = sLines
 		}
 
-		if _, known := uniqueFilePathsForGrandTotalLines[resolvedPath]; !known {
+		// Populate TotalLines for the codeFile and update uniqueFilePathsForGrandTotalLines
+		if lineCount, known := uniqueFilePathsForGrandTotalLines[resolvedPath]; known {
+			codeFile.TotalLines = lineCount
+		} else {
 			if n, ferr := filereader.CountLinesInFile(resolvedPath); ferr == nil {
 				uniqueFilePathsForGrandTotalLines[resolvedPath] = n
 				codeFile.TotalLines = n
 			} else {
 				fmt.Fprintf(os.Stderr, "Warning: could not count lines in %s: %v\n", resolvedPath, ferr)
-				// If we can't count lines, but could read them, use len(sourceLines) as a fallback for TotalLines for this specific file.
-				// This might be different from physical lines if ReadLinesInFile does some normalization, but better than 0.
-				if readErr == nil { // Only if ReadLinesInFile succeeded
+				// If we can't count lines, but could read them, use len(sourceLines) as a fallback.
+				if readErr == nil {
 					uniqueFilePathsForGrandTotalLines[resolvedPath] = len(sourceLines)
 					codeFile.TotalLines = len(sourceLines)
+				} else {
+					codeFile.TotalLines = 0 // Or handle error more explicitly
 				}
 			}
-		} else {
-			codeFile.TotalLines = uniqueFilePathsForGrandTotalLines[resolvedPath]
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "Warning: source file %s not found: %v\n", classXML.Filename, err)
-		sourceLines = []string{} // Ensure sourceLines is empty if file not found
+		sourceLines = []string{}
+		codeFile.TotalLines = 0 // File not found, so 0 total lines for this fragment's perspective
 	}
 
 	var fileFragmentCoveredLines, fileFragmentCoverableLines int
-
-	// Process lines defined directly under <class><lines>
 	for _, lineXML := range classXML.Lines.Line {
-		lineModel, lineMetrics := processLineXML(lineXML, sourceLines) // Pass sourceLines
+		lineModel, lineMetricsStats := processLineXML(lineXML, sourceLines)
 		codeFile.Lines = append(codeFile.Lines, lineModel)
 
-		fileFragmentCoverableLines++
-		metrics.linesValid++
-		if lineModel.Hits > 0 {
-			fileFragmentCoveredLines++
-			metrics.linesCovered++
+		// Only count lines with Hits >= 0 as coverable for line rate calculations
+		if lineModel.Hits >= 0 {
+			fileFragmentCoverableLines++
+			metrics.linesValid++ // linesValid for summary usually means coverable lines
+			if lineModel.Hits > 0 {
+				fileFragmentCoveredLines++
+				metrics.linesCovered++
+			}
 		}
-		metrics.branchesCovered += lineMetrics.branchesCovered
-		metrics.branchesValid += lineMetrics.branchesValid
+		metrics.branchesCovered += lineMetricsStats.branchesCovered
+		metrics.branchesValid += lineMetricsStats.branchesValid
 	}
 	codeFile.CoveredLines = fileFragmentCoveredLines
 	codeFile.CoverableLines = fileFragmentCoverableLines
+
+	// Populate MethodMetrics and CodeElements for the CodeFile
+	for _, methodXML := range classXML.Methods.Method {
+		methodModel, mErr := processMethodXML(methodXML, sourceLines)
+		if mErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: error processing method %s for file %s: %v\n", methodXML.Name, classXML.Filename, mErr)
+			continue
+		}
+
+		// 1. Add MethodMetrics to CodeFile's MethodMetrics list
+		if methodModel.MethodMetrics != nil {
+			codeFile.MethodMetrics = append(codeFile.MethodMetrics, methodModel.MethodMetrics...)
+		}
+
+		// 2. Create and add CodeElement to CodeFile's CodeElements list
+		elementType := model.MethodElementType
+		methodNameForPropertyCheck := methodModel.Name
+		if strings.HasPrefix(methodNameForPropertyCheck, "get_") || strings.HasPrefix(methodNameForPropertyCheck, "set_") {
+			elementType = model.PropertyElementType
+		}
+
+		// Calculate coverage quota for this specific CodeElement
+		var coverageQuotaForElement *float64
+		if len(methodModel.Lines) > 0 {
+			if !math.IsNaN(methodModel.LineRate) && !math.IsInf(methodModel.LineRate, 0) {
+				cq := methodModel.LineRate * 100.0
+				coverageQuotaForElement = &cq
+			}
+		}
+
+		codeElement := model.CodeElement{
+			Name:          methodModel.Name, // This is the short name from processMethodXML
+			FullName:      methodModel.Name + methodModel.Signature,
+			Type:          elementType,
+			FirstLine:     methodModel.FirstLine,
+			LastLine:      methodModel.LastLine,
+			CoverageQuota: coverageQuotaForElement,
+		}
+		codeFile.CodeElements = append(codeFile.CodeElements, codeElement)
+	}
 
 	return &codeFile, metrics, nil
 }
