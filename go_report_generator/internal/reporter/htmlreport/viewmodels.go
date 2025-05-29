@@ -46,6 +46,47 @@ type AngularMetricViewModel struct {
 	ExplanationURL string `json:"explUrl"`
 }
 
+// AngularMethodMetricViewModel placeholder for now
+type AngularMethodMetricViewModel struct {
+	Name string `json:"n"`
+	// Add other relevant fields based on existing C# or Angular models
+}
+
+// AngularCodeElementViewModel placeholder for now
+type AngularCodeElementViewModel struct {
+	Name string `json:"n"`
+	// Add other relevant fields
+}
+
+// AngularLineAnalysisViewModel represents the analysis of a single line of code for Angular.
+type AngularLineAnalysisViewModel struct {
+	LineNumber      int    `json:"ln"`
+	LineContent     string `json:"lc"` // Will be empty for now (Phase 2.3)
+	Hits            int    `json:"h"`
+	LineVisitStatus string `json:"lvs"` // e.g., "covered", "uncovered", "partiallycovered"
+	CoveredBranches int    `json:"cb"`
+	TotalBranches   int    `json:"tb"`
+}
+
+// AngularCodeFileViewModel represents a code file within a class for Angular.
+type AngularCodeFileViewModel struct {
+	Path           string                         `json:"p"`
+	Lines          []AngularLineAnalysisViewModel `json:"ls"`
+	CoveredLines   int                            `json:"cl"`
+	CoverableLines int                            `json:"cal"`
+	TotalLines     int                            `json:"tl"`
+	MethodMetrics  []AngularMethodMetricViewModel `json:"mm"` // Assuming AngularMethodMetricViewModel is already defined or will be
+	CodeElements   []AngularCodeElementViewModel  `json:"ce"` // Assuming AngularCodeElementViewModel is already defined or will be
+}
+
+// AngularClassDetailViewModel represents the detailed data for a single class page for Angular.
+type AngularClassDetailViewModel struct {
+	Class AngularClassViewModel      `json:"class"`
+	Files []AngularCodeFileViewModel `json:"files"`
+	// TODO: Add HistoricCoverage if needed for class detail page specifically
+	// HistoricCoverages []AngularHistoricCoverageViewModel `json:"hc"`
+}
+
 // AngularRiskHotspotViewModel corresponds to the data structure for window.riskHotspots.
 type AngularRiskHotspotViewModel struct {
 	Assembly        string                                    `json:"ass"`
