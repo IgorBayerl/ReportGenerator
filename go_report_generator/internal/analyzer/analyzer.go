@@ -14,7 +14,7 @@ func Analyze(rawReport *inputxml.CoberturaRoot, sourceDirs []string) (*model.Sum
 		ParserName: "Cobertura",
 		SourceDirs: sourceDirs,
 		Assemblies: []model.Assembly{},
-		Timestamp:  processCoberturaTimestamp(rawReport.Timestamp), 
+		Timestamp:  processCoberturaTimestamp(rawReport.Timestamp),
 	}
 
 	summary.LinesCovered = parseInt(rawReport.LinesCovered)
@@ -44,7 +44,7 @@ func Analyze(rawReport *inputxml.CoberturaRoot, sourceDirs []string) (*model.Sum
 		}
 		summary.Assemblies = append(summary.Assemblies, *assembly)
 	}
-	
+
 	if summary.BranchesCovered == nil && summary.BranchesValid == nil {
 		var totalCovered, totalValid int
 		hasAnyAssemblyBranchData := false
@@ -83,7 +83,7 @@ func parseFloat(s string) float64 { v, _ := strconv.ParseFloat(s, 64); return v 
 // E.g., between 1975-01-01 and 2100-01-01.
 func isValidUnixSeconds(ts int64) bool {
 	const minValidSeconds int64 = 157766400  // Approx 1975-01-01 UTC
-	const maxValidSeconds int64 = 4102444800  // Approx 2100-01-01 UTC
+	const maxValidSeconds int64 = 4102444800 // Approx 2100-01-01 UTC
 	return ts >= minValidSeconds && ts <= maxValidSeconds
 }
 
@@ -123,7 +123,7 @@ func processCoberturaTimestamp(rawTimestamp string) int64 {
 		// Intentionally return 0 to not display a date for these, mimicking C# RG behavior.
 		return 0
 	}
-	
+
 	// For any other case (unusual length, or "seconds-like" but invalid value)
 	return 0
 }

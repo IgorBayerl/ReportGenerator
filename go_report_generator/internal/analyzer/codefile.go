@@ -29,7 +29,7 @@ func findFileInSourceDirs(relativePath string, sourceDirs []string) (string, err
 		// This handles cases where paths in Cobertura are "absolute" but only from a CI build agent's perspective
 	}
 
-	cleanedRelativePath := filepath.Clean(relativePath) 
+	cleanedRelativePath := filepath.Clean(relativePath)
 
 	for _, dir := range sourceDirs {
 		// Try joining directly

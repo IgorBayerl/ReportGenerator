@@ -54,7 +54,6 @@ func processPackageXML(pkgXML inputxml.PackageXML, sourceDirs []string, uniqueFi
 		assembly.BranchesValid = &totalAsmBranchesValid
 	}
 
-
 	for path := range assemblyProcessedFilePaths {
 		if lineCount, ok := uniqueFilePathsForGrandTotalLines[path]; ok {
 			assembly.TotalLines += lineCount

@@ -6,11 +6,11 @@ type SummaryResult struct {
 	Timestamp       int64
 	SourceDirs      []string
 	Assemblies      []Assembly
-	LinesCovered    int // Overall
-	LinesValid      int // Overall
+	LinesCovered    int  // Overall
+	LinesValid      int  // Overall
 	BranchesCovered *int // Overall - Pointer to indicate presence
 	BranchesValid   *int // Overall - Pointer to indicate presence
-	TotalLines      int // Grand total physical lines from unique source files
+	TotalLines      int  // Grand total physical lines from unique source files
 }
 
 type Assembly struct {
@@ -24,15 +24,15 @@ type Assembly struct {
 }
 
 type Class struct {
-	Name            string
-	DisplayName     string
-	Files           []CodeFile
-	Methods         []Method
-	LinesCovered    int
-	LinesValid      int
-	BranchesCovered *int // Pointer
-	BranchesValid   *int // Pointer
-	TotalLines      int
+	Name              string
+	DisplayName       string
+	Files             []CodeFile
+	Methods           []Method
+	LinesCovered      int
+	LinesValid        int
+	BranchesCovered   *int // Pointer
+	BranchesValid     *int // Pointer
+	TotalLines        int
 	HistoricCoverages []HistoricCoverage // Historical coverage data for this class
 }
 
@@ -46,12 +46,12 @@ type CodeFile struct {
 }
 
 type Method struct {
-	Name       string
-	Signature  string
-	LineRate   float64 // Stored as 0-1.0 
-	BranchRate float64 // Stored as 0-1.0
-	Complexity float64
-	Lines      []Line
+	Name          string
+	Signature     string
+	LineRate      float64 // Stored as 0-1.0
+	BranchRate    float64 // Stored as 0-1.0
+	Complexity    float64
+	Lines         []Line
 	FirstLine     int            // The line number where the method definition starts
 	LastLine      int            // The line number where the method definition ends
 	MethodMetrics []MethodMetric // Specific metrics for this method
@@ -64,13 +64,13 @@ type BranchCoverageDetail struct {
 }
 
 type Line struct {
-	Number                 int
-	Hits                   int
-	IsBranchPoint          bool                   // True if the line is a branch point (from XML branch="true")
-	Branch                 []BranchCoverageDetail // Details of branches on this line
-	ConditionCoverage      string
-	Content                string            // The actual source code content of the line
-	CoveredBranches        int               // Number of branches on this line that were covered
-	TotalBranches          int               // Total number of branches on this line
-	LineCoverageByTestMethod map[string]int    // Tracks hits for this line by TestMethod.ID
+	Number                   int
+	Hits                     int
+	IsBranchPoint            bool                   // True if the line is a branch point (from XML branch="true")
+	Branch                   []BranchCoverageDetail // Details of branches on this line
+	ConditionCoverage        string
+	Content                  string         // The actual source code content of the line
+	CoveredBranches          int            // Number of branches on this line that were covered
+	TotalBranches            int            // Total number of branches on this line
+	LineCoverageByTestMethod map[string]int // Tracks hits for this line by TestMethod.ID
 }
