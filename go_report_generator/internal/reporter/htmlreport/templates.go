@@ -64,27 +64,26 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
 <link href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAn1BMVEUAAADCAAAAAAA3yDfUAAA3yDfUAAA8PDzr6+sAAAD4+Pg3yDeQkJDTAADt7e3V1dU3yDdCQkIAAADbMTHUAABBykHUAAA2yDY3yDfr6+vTAAB3diDR0dGYcHDUAAAjhiPSAAA3yDeuAADUAAA3yDf////OCALg9+BLzktBuzRelimzKgv87+/dNTVflSn1/PWz6rO126g5yDlYniy0KgwjJ0TyAAAAI3RSTlMABAj0WD6rJcsN7X1HzMqUJyYW+/X08+bltqSeaVRBOy0cE+citBEAAADBSURBVDjLlczXEoIwFIThJPYGiL0XiL3r+z+bBOJs9JDMuLffP8v+Gxfc6aIyDQVjQcnqnvRDEQwLJYtXpZT+YhDHKIjLbS+OUeT4TjkKi6OwOArq+yeKXD9uDqQQbcOjyCy0e6bTojZSftX+U6zUQ7OuittDu1k0WHqRFfdXQijgjKfF6ZwAikvmKD6OQjmKWUcDigkztm5FZN05nMON9ZcoinlBmTNnAUdBnRbUUbgdBZwWbkcBpwXcVsBtxfjb31j1QB5qeebOAAAAAElFTkSuQmCC" rel="icon" type="image/x-icon" />
 <title>{{.Class.Name}} - {{.ReportTitle}}</title>
 <link rel="stylesheet" type="text/css" href="report.css" />
-<!-- Potentially include chartist.min.css if charts are rendered server-side or by basic JS -->
-<!-- Angular's main CSS will be injected if <app-root> or specific components are used -->
 <link rel="stylesheet" type="text/css" href="{{.AngularCssFile}}">
 </head>
 <body>
-    <!-- Data for Angular (especially for source code view, history charts if Angular handles them) -->
     <script>
         window.classDetails = JSON.parse({{.ClassDetailJSON}});
-        window.assemblies = JSON.parse({{.AssembliesJSON}}); // Global context for nav
+        window.assemblies = JSON.parse({{.AssembliesJSON}});
         window.translations = JSON.parse({{.TranslationsJSON}});
-        // Add other global window vars if Angular components on this page need them
         window.branchCoverageAvailable = {{.BranchCoverageAvailable}};
         window.methodCoverageAvailable = {{.MethodCoverageAvailable}};
         window.maximumDecimalPlacesForCoverageQuotas = {{.MaximumDecimalPlacesForCoverageQuotas}};
+        window.riskHotspots = JSON.parse({{.RiskHotspotsJSON}}); // Ensure these are valid JSON, e.g., "[]" or "{}" if empty
+        window.metrics = JSON.parse({{.MetricsJSON}});
+        window.riskHotspotMetrics = JSON.parse({{.RiskHotspotMetricsJSON}});
+        window.historicCoverageExecutionTimes = JSON.parse({{.HistoricCoverageExecutionTimesJSON}});
     </script>
 
     <div class="container">
         <div class="containerleft">
             <h1><a href="index.html" class="back"><</a> {{.Translations.Summary}}</h1>
 
-            <!-- Information Card -->
             <div class="card-group">
                 <div class="card">
                     <div class="card-header">{{.Translations.Information}}</div>
@@ -111,9 +110,8 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Coverage Cards -->
             <div class="card-group">
-                <div class="card"> <!-- Line Coverage Card -->
+                <div class="card">
                     <div class="card-header">{{.Translations.LineCoverage}}</div>
                     <div class="card-body">
                         <div class="large cardpercentagebar cardpercentagebar{{.Class.CoveragePercentageBarValue}}">{{.Class.CoveragePercentageForDisplay}}</div>
@@ -129,7 +127,7 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
                     </div>
                 </div>
                 {{if .BranchCoverageAvailable}}
-                <div class="card"> <!-- Branch Coverage Card -->
+                <div class="card">
                     <div class="card-header">{{.Translations.BranchCoverage}}</div>
                     <div class="card-body">
                         <div class="large cardpercentagebar cardpercentagebar{{.Class.BranchCoveragePercentageBarValue}}">{{.Class.BranchCoveragePercentageForDisplay}}</div>
@@ -143,7 +141,7 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
                     </div>
                 </div>
                 {{end}}
-                 <div class="card"> <!-- Method Coverage Card -->
+                 <div class="card">
                     <div class="card-header">{{.Translations.MethodCoverage}}</div>
                     <div class="card-body">
                         {{if .MethodCoverageAvailable}}
@@ -167,7 +165,6 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Metrics Table -->
             {{if .Class.FilesWithMetrics}}
             <h1>{{.Translations.Metrics}}</h1>
             <div class="table-responsive">
@@ -194,7 +191,6 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
             </div>
             {{end}}
 
-            <!-- File(s) Section -->
             <h1>{{.Translations.Files3}}</h1>
             {{range $fileIdx, $file := .Class.Files}}
             <h2 id="{{$file.ShortPath}}">{{$file.Path}}</h2>
@@ -223,9 +219,8 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
             {{end}}
 
             <div class="footer">{{.Translations.GeneratedBy}} ReportGenerator {{.AppVersion}}<br />{{.CurrentDateTime}}<br /><a href="https://github.com/danielpalme/ReportGenerator">GitHub</a> | <a href="https://reportgenerator.io">reportgenerator.io</a></div>
-        </div> <!-- End containerleft -->
+        </div> 
 
-        <!-- Right Sidebar for Methods/Properties -->
         {{if .Class.SidebarElements}}
         <div class="containerright">
             <div class="containerrightfixed">
@@ -237,29 +232,32 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
             </div>
         </div>
         {{end}}
-    </div> <!-- End container -->
+    </div> 
 
-    <!-- Static JS (Chartist is not used on class detail page by default in C#) -->
-    <!-- <script type="text/javascript" src="chartist.min.js"></script> -->
-    <script type="text/javascript" src="custom.js"></script> <!-- For navigateToHash etc. -->
-    
-    <!-- Angular App's JS files (if Angular is used for specific components like source view) -->
+    <script type="text/javascript" src="custom.js"></script> 
     <script src="{{.AngularRuntimeJsFile}}" type="module"></script>
     {{if .AngularPolyfillsJsFile}}<script src="{{.AngularPolyfillsJsFile}}" type="module"></script>{{end}}
     <script src="{{.AngularMainJsFile}}" type="module"></script>
 </body>
 </html>`
 
+
 // Parse this new template
 var classDetailTpl = template.Must(template.New("classDetail").Funcs(template.FuncMap{
-    "inc": func(i int) int { return i + 1 },
-    "sub": func(a, b int) int { return a - b }, // Ensure 'sub' is here
-    "SanitizeSourceLine": func(line string) template.HTML {
-        line = strings.ReplaceAll(line, "\t", "    ") // Replace tabs first
+	"inc": func(i int) int { return i + 1 },
+	"sub": func(a, b int) int { return a - b },
+	"SanitizeSourceLine": func(line string) template.HTML {
+		// 1. HTML-escape first to get &lt;, &gt;, &amp; …
         escaped := html.EscapeString(line)
-        // The C# output uses   for all spaces inside the <code> tag to preserve indentation.
-        return template.HTML(strings.ReplaceAll(escaped, " ", " "))
-    },
+
+        // 2. Replace TABs with four real spaces first (so that step 3 sees them)
+        escaped = strings.ReplaceAll(escaped, "\t", "    ")
+
+        // 3. Turn every real space into &nbsp;
+        escaped = strings.ReplaceAll(escaped, " ", "&nbsp;")
+
+        return template.HTML(escaped)   // mark it safe – we built the HTML ourselves
+	},
 }).Parse(classDetailLayoutTemplate))
 
 

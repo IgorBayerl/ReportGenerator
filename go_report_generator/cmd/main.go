@@ -130,10 +130,18 @@ func main() {
 		os.Exit(1)
 	}
 	if len(reportConfig.SourceDirectories()) == 0 && len(sourceDirsFromParser) > 0 {
-		// If command line didn't specify source dirs, but Cobertura XML did, we might want to use them.
-		// This requires ReportConfiguration to be mutable or to re-create it.
-		// For now, we log this. The analyzer will use what's in reportConfig.
-		fmt.Printf("Note: Cobertura report specified source directories: %v. Consider using -sourcedirs if needed.\n", sourceDirsFromParser)
+		// If command line didn't specify source dirs, but Cobertura XML did, re-create the reportConfig with the new source dirs.
+		fmt.Printf("Note: Cobertura report specified source directories: %v. Using these as source directories.\n", sourceDirsFromParser)
+		reportConfig = reportconfig.NewReportConfiguration(
+			[]string{*reportPath},
+			*outputDir,
+			sourceDirsFromParser,
+			"", // historyDir
+			requestedTypes,
+			*tag,
+			actualTitle,
+			verbosity,
+		)
 	}
 
 	fmt.Printf("Cobertura XML parsed successfully.\n")

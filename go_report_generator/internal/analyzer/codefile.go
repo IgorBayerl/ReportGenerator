@@ -23,24 +23,22 @@ type fileProcessingMetrics struct {
 // findFileInSourceDirs attempts to locate a file, first checking if it's absolute,
 // then searching through the provided source directories.
 func findFileInSourceDirs(relativePath string, sourceDirs []string) (string, error) {
-	if filepath.IsAbs(relativePath) {
-		if _, err := os.Stat(relativePath); err == nil {
-			return relativePath, nil
-		}
-		// If absolute path not found, don't give up yet, try searching in sourceDirs
-		// This handles cases where paths in Cobertura are "absolute" but only from a CI build agent's perspective
-	}
+    if filepath.IsAbs(relativePath) { // This will be false for "PartialClass.cs"
+        if _, err := os.Stat(relativePath); err == nil {
+            return relativePath, nil
+        }
+    }
 
-	cleanedRelativePath := filepath.Clean(relativePath)
+    cleanedRelativePath := filepath.Clean(relativePath) // cleanedRelativePath will still be "PartialClass.cs"
 
-	for _, dir := range sourceDirs {
-		// Try joining directly
-		abs := filepath.Join(filepath.Clean(dir), cleanedRelativePath)
-		if _, err := os.Stat(abs); err == nil {
-			return abs, nil
-		}
-	}
-	return "", fmt.Errorf("file %q not found in any source directory or as absolute path", relativePath)
+    for _, dir := range sourceDirs { // dir will be "C:\www\ReportGenerator\Testprojects\CSharp\Project_DotNetCore\Test\"
+        abs := filepath.Join(filepath.Clean(dir), cleanedRelativePath)
+        // abs should become "C:\www\ReportGenerator\Testprojects\CSharp\Project_DotNetCore\Test\PartialClass.cs"
+        if _, err := os.Stat(abs); err == nil {
+            return abs, nil
+        }
+    }
+    return "", fmt.Errorf("file %q not found in any source directory (%v) or as absolute path", relativePath, sourceDirs) // Log sourceDirs for debugging
 }
 
 // processCodeFileFragment processes the file-specific parts of an inputxml.ClassXML.
