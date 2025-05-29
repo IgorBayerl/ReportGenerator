@@ -166,7 +166,8 @@ To port the HTML reporting functionality from the C# ReportGenerator tool to the
         * Ensure Angular's source view component correctly uses this data and `report.css` provides styling.
     * **C# Reference:** `HtmlRenderer.cs` (line analysis rendering), `LocalFileReader.cs`.
     * **Angular Reference:** `src/app/source-code/source-code.component.ts`
-    * **Status:** PENDING.
+    * **Status:** DONE.
+    * **Summary:** Implemented source file reading and injected line content and precise visit status into class detail pages. Angular now renders styled source code.
 * **Step 2.4: History Charts**
     * **Goal:** Display coverage history charts on summary and class detail pages, using data from Go.
     * **Tasks:**
