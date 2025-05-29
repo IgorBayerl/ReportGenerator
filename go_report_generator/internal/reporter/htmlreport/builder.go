@@ -11,10 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"regexp" // Added for sanitizeFilenameChars
+
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 	"golang.org/x/net/html"
-	"regexp" // Added for sanitizeFilenameChars
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader" // Added for reading source file lines
 )
@@ -69,9 +70,17 @@ type HtmlReportBuilder struct {
 	maximumDecimalPlacesForCoverageQuotas int
 	parserName                            string
 	reportTimestamp                       int64
-	reportTitle                           string // e.g. "Coverage Report"
-	translations                          map[string]string
-	onlySummary                           bool // If true, only index.html is generated
+	reportTitle                           string
+	translations                          map[string]string // Keep translations map
+	onlySummary                           bool
+
+	// Pre-marshaled global data
+	assembliesJSON                     template.JS
+	riskHotspotsJSON                   template.JS
+	metricsJSON                        template.JS
+	riskHotspotMetricsJSON             template.JS
+	historicCoverageExecutionTimesJSON template.JS
+	translationsJSON                   template.JS // For marshaled translations
 }
 
 // NewHtmlReportBuilder creates a new HtmlReportBuilder.
@@ -155,13 +164,14 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	}
 
 	// Populate translations
-	b.translations = GetTranslations() // Assuming this function exists and returns map[string]string
+	b.translations = GetTranslations()
 	translationsJSONBytes, err := json.Marshal(b.translations)
 	if err != nil {
-		data.TranslationsJSON = template.JS("({})") // Fallback
+		data.TranslationsJSON = template.JS("({})") 
 	} else {
 		data.TranslationsJSON = template.JS(translationsJSONBytes)
 	}
+	b.translationsJSON = data.TranslationsJSON // Store for class pages
 
 	// Populate AngularMetricViewModel slice (for window.metrics)
 	// These are the overall metrics available in the report.
@@ -614,59 +624,54 @@ func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, all
 				CodeElements:   []AngularCodeElementViewModel{},  // Placeholder as model.CodeFile doesn't have CodeElements
 			}
 
+			// Create a map for quick lookup of coverage data
+			coverageLinesMap := make(map[int]*model.Line)
 			if fileInClass.Lines != nil {
-				for _, line := range fileInClass.Lines { // line is model.Line
-					// Assuming model.Line has a field 'CoverageStatus' or similar of type int (model.LineVisitStatus)
-					// For now, using a placeholder '0' for status as model.Line definition is not fully clear on this
-					// And assuming model.Line has CoveredBranches and TotalBranches directly.
-					// The current model.Line from analysis.go does not have CoverageStatus directly.
-					// It has Hits, IsBranchPoint, Branch (details), CoveredBranches, TotalBranches.
-					// We need to derive LineVisitStatus based on Hits, IsBranchPoint, CoveredBranches, TotalBranches.
-					// This is a simplified placeholder for LineVisitStatus determination:
-					// status := lineVisitStatusNotCoverable // Default // Commenting out old logic
-					// if line.Hits > 0 {
-					// 	if line.IsBranchPoint {
-					// 		if line.CoveredBranches == line.TotalBranches {
-					// 			status = lineVisitStatusCovered
-					// 		} else if line.CoveredBranches > 0 {
-					// 			status = lineVisitStatusPartiallyCovered
-					// 		} else {
-					// 			status = lineVisitStatusNotCovered
-					// 		}
-					// 	} else { // Not a branch point
-					// 		status = lineVisitStatusCovered // Simple line, hit
-					// 	}
-					// } else {
-					// 	// If a line has 0 hits, it's 'uncovered' if it was a line that was meant to be covered.
-					// 	// NotCoverable is for lines that cannot be covered (e.g. comments, empty lines not processed by parser).
-					// 	// Since this line is part of fileInClass.Lines, we assume it's a code line.
-					// 	// A more robust model would have LineVisitStatus set by the parser.
-					// 	// If IsBranchPoint and Hits == 0, it's NotCovered.
-					// 	// If !IsBranchPoint and Hits == 0, it's NotCovered.
-					// 	// Default 'lineVisitStatusNotCoverable' is for lines the parser identifies as such.
-					// 	status = lineVisitStatusNotCovered
-					// }
-					// Call the new function to determine status
-					status := determineLineVisitStatus(line.Hits, line.IsBranchPoint, line.CoveredBranches, line.TotalBranches)
-
-					var currentLineContent string
-					if line.Number > 0 && line.Number <= len(sourceFileLines) {
-						currentLineContent = sourceFileLines[line.Number-1]
-					} else {
-						currentLineContent = "" // Or a placeholder like "// Source line not available"
-					}
-
-					angularLine := AngularLineAnalysisViewModel{
-						LineNumber:      line.Number,
-						LineContent:     currentLineContent, // Assign the read content
-						Hits:            line.Hits,
-						LineVisitStatus: lineVisitStatusToString(status),
-						CoveredBranches: line.CoveredBranches, // Assuming model.Line has these
-						TotalBranches:   line.TotalBranches,   // Assuming model.Line has these
-					}
-					angularFile.Lines = append(angularFile.Lines, angularLine)
+				for i := range fileInClass.Lines { // Iterate by index to get pointer
+					covLine := &fileInClass.Lines[i]
+					coverageLinesMap[covLine.Number] = covLine
 				}
 			}
+
+			var processedLines []AngularLineAnalysisViewModel
+			for i, content := range sourceFileLines {
+				actualLineNumber := i + 1
+				currentLineContent := content
+
+				var hits int
+				var isBranchPoint bool
+				var coveredBranches int
+				var totalBranches int
+				var lineVisitStatusString string
+
+				modelCovLine, hasCoverageData := coverageLinesMap[actualLineNumber]
+
+				if hasCoverageData {
+					hits = modelCovLine.Hits
+					isBranchPoint = modelCovLine.IsBranchPoint
+					coveredBranches = modelCovLine.CoveredBranches
+					totalBranches = modelCovLine.TotalBranches
+					status := determineLineVisitStatus(hits, isBranchPoint, coveredBranches, totalBranches)
+					lineVisitStatusString = lineVisitStatusToString(status)
+				} else {
+					hits = 0
+					isBranchPoint = false
+					coveredBranches = 0
+					totalBranches = 0
+					lineVisitStatusString = "notcoverable" // Explicitly mark as notcoverable
+				}
+
+				angularLine := AngularLineAnalysisViewModel{
+					LineNumber:      actualLineNumber,
+					LineContent:     currentLineContent,
+					Hits:            hits,
+					LineVisitStatus: lineVisitStatusString,
+					CoveredBranches: coveredBranches,
+					TotalBranches:   totalBranches,
+				}
+				processedLines = append(processedLines, angularLine)
+			}
+			angularFile.Lines = processedLines
 			angularCodeFiles = append(angularCodeFiles, angularFile)
 		}
 	}
