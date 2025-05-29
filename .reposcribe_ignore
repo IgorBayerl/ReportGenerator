@@ -78,8 +78,11 @@ coverage-report/
 docs/*
 .github/*
 
-
-
+**.js
+**.css
+**.ico
+**.png
+**.svg
 
 **go_report_generator/README.md
 **go_report_generator/CHECKLIST.md
