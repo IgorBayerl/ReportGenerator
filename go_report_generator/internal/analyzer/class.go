@@ -201,12 +201,11 @@ func processClassGroup(
 			// For now, method branch data contributes to class via fragmentMetrics
 		}
 	}
-	
+
 	if hasClassBranchData {
 		classModel.BranchesCovered = &totalClassBranchesCovered
 		classModel.BranchesValid = &totalClassBranchesValid
 	}
-
 
 	for path := range classProcessedFilePaths {
 		if lineCount, ok := uniqueFilePathsForGrandTotalLines[path]; ok {

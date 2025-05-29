@@ -53,11 +53,11 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 
 	sfw.writeLine("Summary")
 	sfw.writeLine("  Generated on: %s", time.Now().Format("02/01/2006 - 15:04:05"))
-	
+
 	if summary.Timestamp > 0 {
 		sfw.writeLine("  Coverage date: %s", time.Unix(summary.Timestamp, 0).Format("02/01/2006 - 15:04:05"))
 	}
-	
+
 	sfw.writeLine("  Parser: %s", summary.ParserName)
 
 	totalClasses := 0
@@ -103,7 +103,6 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 		sfw.writeLine("  Covered branches: %d", *summary.BranchesCovered)
 		sfw.writeLine("  Total branches: %d", *summary.BranchesValid)
 	}
-
 
 	totalMethods, coveredMethods, fullyCoveredMethods := 0, 0, 0
 	for _, assembly := range summary.Assemblies {

@@ -44,7 +44,7 @@ func processLineXML(lineXML inputxml.LineXML, sourceLines []string) (model.Line,
 
 	line := model.Line{
 		Number:            lineNumber,
-		Hits:              parseInt(lineXML.Hits), // Assuming parseInt is defined elsewhere
+		Hits:              parseInt(lineXML.Hits),     // Assuming parseInt is defined elsewhere
 		IsBranchPoint:     (lineXML.Branch == "true"), // Set based on XML attribute
 		ConditionCoverage: lineXML.ConditionCoverage,
 		Branch:            make([]model.BranchCoverageDetail, 0), // Initialize as empty slice
@@ -95,7 +95,6 @@ func processLineXML(lineXML inputxml.LineXML, sourceLines []string) (model.Line,
 			line.CoveredBranches = 1 // If the line was hit, consider this single branch covered
 		}
 	}
-
 
 	metrics.branchesCovered = line.CoveredBranches
 	metrics.branchesValid = line.TotalBranches

@@ -18,6 +18,20 @@ const baseLayoutTemplate = `<!DOCTYPE html>
     <link rel="stylesheet" type="text/css" href="{{ .AngularCssFile }}">
 </head>
 <body>
+    <!-- Data for Angular -->
+    <script>
+        window.assemblies = {{.AssembliesJSON}};
+        window.riskHotspots = {{.RiskHotspotsJSON}};
+        window.metrics = {{.MetricsJSON}};
+        window.riskHotspotMetrics = {{.RiskHotspotMetricsJSON}};
+        window.historicCoverageExecutionTimes = {{.HistoricCoverageExecutionTimesJSON}};
+        window.translations = {{.TranslationsJSON}};
+
+        window.branchCoverageAvailable = {{.BranchCoverageAvailable}};
+        window.methodCoverageAvailable = {{.MethodCoverageAvailable}};
+        window.maximumDecimalPlacesForCoverageQuotas = {{.MaximumDecimalPlacesForCoverageQuotas}};
+    </script>
+
     <!-- Traditional report header - this might be removed or restyled if Angular takes over full page -->
     <h1>Report for {{ .ParserName }}</h1>
     <p>Generated on: {{ .GeneratedAt }}</p>
@@ -50,7 +64,7 @@ var (
 func getBaseLayoutTemplate() (*template.Template, error) {
 	// If baseTpl was not initialized with template.Must, it could be parsed here.
 	// return template.New("base").Parse(baseLayoutTemplate)
-	
+
 	// Since baseTpl is initialized with template.Must, we can return a clone
 	// if modification per-use is a concern, or the original if it's read-only.
 	// For simplicity, returning the shared instance is fine if it's not modified.
