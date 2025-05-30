@@ -24,24 +24,28 @@ type Assembly struct {
 }
 
 type Class struct {
-	Name              string
-	DisplayName       string
-	Files             []CodeFile
-	Methods           []Method
-	LinesCovered      int
-	LinesValid        int
-	BranchesCovered   *int // Pointer
-	BranchesValid     *int // Pointer
-	TotalLines        int
-	HistoricCoverages []HistoricCoverage // Historical coverage data for this class
+	Name                string
+	DisplayName         string
+	Files               []CodeFile
+	Methods             []Method
+	LinesCovered        int
+	LinesValid          int
+	BranchesCovered     *int // Pointer
+	BranchesValid       *int // Pointer
+	TotalLines          int
+	CoveredMethods      int                
+	FullyCoveredMethods int                
+	TotalMethods        int                
+	Metrics             map[string]float64 // Aggregated metrics (e.g., sum of complexities)
+	HistoricCoverages   []HistoricCoverage // Historical coverage data for this class
 }
 
 type CodeFile struct {
 	Path           string
-	Lines          []Line 
-	CoveredLines   int    
-	CoverableLines int    
-	TotalLines     int    
+	Lines          []Line
+	CoveredLines   int
+	CoverableLines int
+	TotalLines     int
 	MethodMetrics  []MethodMetric // Metrics for methods within this file
 	CodeElements   []CodeElement  // Code elements (methods/properties) in this file
 }
@@ -54,12 +58,12 @@ const (
 )
 
 type CodeElement struct {
-	Name            string
-	FullName        string // For uniqueness, e.g., with signature
-	Type            CodeElementType
-	FirstLine       int
-	LastLine        int
-	CoverageQuota   *float64 // Nullable (percentage 0-100)
+	Name          string
+	FullName      string // For uniqueness, e.g., with signature
+	Type          CodeElementType
+	FirstLine     int
+	LastLine      int
+	CoverageQuota *float64 // Nullable (percentage 0-100)
 }
 
 type Method struct {

@@ -10,42 +10,48 @@ type AngularAssemblyViewModel struct {
 
 // AngularClassViewModel corresponds to the data structure for classes within window.assemblies.
 type AngularClassViewModel struct {
-	Name                      string                             `json:"name"`
+	Name                      string                             `json:"name"` // This should be the DisplayName
 	ReportPath                string                             `json:"rp"`
 	CoveredLines              int                                `json:"cl"`
 	UncoveredLines            int                                `json:"ucl"`
 	CoverableLines            int                                `json:"cal"`
-	TotalLines                int                                `json:"tl"`
+	TotalLines                int                                `json:"tl"` // In C#, this is int?, Go model.Class.TotalLines is int. Ensure consistency.
 	CoveredBranches           int                                `json:"cb"`
 	TotalBranches             int                                `json:"tb"`
 	CoveredMethods            int                                `json:"cm"`
 	FullyCoveredMethods       int                                `json:"fcm"`
 	TotalMethods              int                                `json:"tm"`
-	LineCoverageHistory       []float64                          `json:"lch,omitempty"`
-	BranchCoverageHistory     []float64                          `json:"bch,omitempty"`
+	LineCoverageHistory       []float64                          `json:"lch,omitempty"` // Array of line coverage percentages
+	BranchCoverageHistory     []float64                          `json:"bch,omitempty"` // Array of branch coverage percentages
 	MethodCoverageHistory     []float64                          `json:"mch,omitempty"`
 	FullMethodCoverageHistory []float64                          `json:"mfch,omitempty"`
-	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc"`
-	Metrics                   map[string]float64                 `json:"metrics,omitempty"`
+	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc"`                // Detailed historic coverage records
+	Metrics                   map[string]float64                 `json:"metrics,omitempty"` // e.g., "cyclomaticComplexity": 10
 }
 
 // AngularHistoricCoverageViewModel corresponds to individual historic coverage data points.
 type AngularHistoricCoverageViewModel struct {
-	ExecutionTime       string  `json:"et"`
-	CoveredLines        int     `json:"cl"`
-	CoverableLines      int     `json:"cal"`
-	TotalLines          int     `json:"tl"`
-	LineCoverageQuota   float64 `json:"lcq"`
-	CoveredBranches     int     `json:"cb"`
-	TotalBranches       int     `json:"tb"`
-	BranchCoverageQuota float64 `json:"bcq"`
+	ExecutionTime           string  `json:"et"` // Formatted string: "YYYY-MM-DD - HH:MM:SS - Tag"
+	CoveredLines            int     `json:"cl"`
+	UncoveredLines          int     `json:"ucl"` // Calculated: CoverableLines - CoveredLines
+	CoverableLines          int     `json:"cal"`
+	TotalLines              int     `json:"tl"`
+	LineCoverageQuota       float64 `json:"lcq"` // Percentage
+	CoveredBranches         int     `json:"cb"`
+	TotalBranches           int     `json:"tb"`
+	BranchCoverageQuota     float64 `json:"bcq"` // Percentage
+	CoveredMethods          int     `json:"cm"`
+	FullyCoveredMethods     int     `json:"fcm"`
+	TotalMethods            int     `json:"tm"`
+	MethodCoverageQuota     float64 `json:"mcq"`  // Percentage
+	FullMethodCoverageQuota float64 `json:"mfcq"` // Percentage
 }
 
 // AngularMetricViewModel corresponds to the data structure for window.metrics.
 type AngularMetricViewModel struct {
 	Name           string `json:"name"`
-	Abbreviation   string `json:"abbr"`
-	ExplanationURL string `json:"explUrl"`
+	Abbreviation   string `json:"abbreviation"` // Corrected from C# model (abbreviation, not abbr)
+	ExplanationURL string `json:"explanationUrl"`
 }
 
 // AngularMethodMetricViewModel represents a row in the "Metrics" table on class page
@@ -101,27 +107,27 @@ type AngularClassDetailViewModel struct {
 
 // AngularRiskHotspotViewModel corresponds to the data structure for window.riskHotspots.
 type AngularRiskHotspotViewModel struct {
-	Assembly        string                                    `json:"ass"`
-	Class           string                                    `json:"cls"`
-	ReportPath      string                                    `json:"rp"`
-	MethodName      string                                    `json:"meth"`
-	MethodShortName string                                    `json:"methsn"`
-	FileIndex       int                                       `json:"fi"`
-	Line            int                                       `json:"l"`
+	Assembly        string                                    `json:"assembly"`        // Corrected from C# (assembly, not ass)
+	Class           string                                    `json:"class"`           // Corrected from C# (class, not cls)
+	ReportPath      string                                    `json:"reportPath"`      // Corrected from C# (reportPath, not rp)
+	MethodName      string                                    `json:"methodName"`      // Corrected from C# (methodName, not meth)
+	MethodShortName string                                    `json:"methodShortName"` // Corrected from C# (methodShortName, not methsn)
+	FileIndex       int                                       `json:"fileIndex"`       // Corrected from C# (fileIndex, not fi)
+	Line            int                                       `json:"line"`
 	Metrics         []AngularRiskHotspotStatusMetricViewModel `json:"metrics"`
 }
 
 // AngularRiskHotspotStatusMetricViewModel represents a single metric's status for a risk hotspot.
 type AngularRiskHotspotStatusMetricViewModel struct {
-	Value    string `json:"val"` // Value can be string (e.g. "N/A") or number
-	Exceeded bool   `json:"ex"`
+	Value    float64 `json:"value"` // C# has this as decimal?, let's use float64 in Go
+	Exceeded bool    `json:"exceeded"`
 }
 
 // AngularRiskHotspotMetricHeaderViewModel corresponds to the data structure for window.riskHotspotMetrics (headers).
 type AngularRiskHotspotMetricHeaderViewModel struct {
 	Name           string `json:"name"`
-	Abbreviation   string `json:"abbr"`
-	ExplanationURL string `json:"explUrl"`
+	Abbreviation   string `json:"abbreviation,omitempty"` // Make consistent with Angular model
+	ExplanationURL string `json:"explanationUrl"`
 }
 
 // AngularMetricValueViewModel represents a specific metric's value (e.g., Complexity: 5)
@@ -181,33 +187,33 @@ type ClassDetailData struct {
 
 // ClassViewModelForDetail holds data for the main class being displayed
 type ClassViewModelForDetail struct {
-	Name                               string
-	AssemblyName                       string
-	Files                              []FileViewModelForDetail
-	IsMultiFile                        bool
-	CoveragePercentageForDisplay       string
-	CoveragePercentageBarValue         int
-	CoveredLines                       int
-	UncoveredLines                     int
-	CoverableLines                     int
-	TotalLines                         int
-	CoverageRatioTextForDisplay        string
-	BranchCoveragePercentageForDisplay string
-	BranchCoveragePercentageBarValue   int
-	CoveredBranches                    int
-	TotalBranches                      int
-	BranchCoverageRatioTextForDisplay  string
-	MethodCoveragePercentageForDisplay string
-	MethodCoveragePercentageBarValue   int
+	Name                                   string
+	AssemblyName                           string
+	Files                                  []FileViewModelForDetail
+	IsMultiFile                            bool
+	CoveragePercentageForDisplay           string
+	CoveragePercentageBarValue             int
+	CoveredLines                           int
+	UncoveredLines                         int
+	CoverableLines                         int
+	TotalLines                             int
+	CoverageRatioTextForDisplay            string
+	BranchCoveragePercentageForDisplay     string
+	BranchCoveragePercentageBarValue       int
+	CoveredBranches                        int
+	TotalBranches                          int
+	BranchCoverageRatioTextForDisplay      string
+	MethodCoveragePercentageForDisplay     string
+	MethodCoveragePercentageBarValue       int
 	FullMethodCoveragePercentageForDisplay string // ADDED
-	CoveredMethods                     int
-	FullyCoveredMethods                int
-	TotalMethods                       int
-	MethodCoverageRatioTextForDisplay  string
-	FullMethodCoverageRatioTextForDisplay string
-	MetricsTable                       MetricsTableViewModel
-	FilesWithMetrics                   bool
-	SidebarElements                    []SidebarElementViewModel
+	CoveredMethods                         int
+	FullyCoveredMethods                    int
+	TotalMethods                           int
+	MethodCoverageRatioTextForDisplay      string
+	FullMethodCoverageRatioTextForDisplay  string
+	MetricsTable                           MetricsTableViewModel
+	FilesWithMetrics                       bool
+	SidebarElements                        []SidebarElementViewModel
 	// Fields for JS data, if needed by Angular components directly via this struct (less likely with server-side template)
 	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc,omitempty"`
 	LineCoverageHistory       []float64                          `json:"lch,omitempty"`
@@ -216,7 +222,6 @@ type ClassViewModelForDetail struct {
 	FullMethodCoverageHistory []float64                          `json:"mfch,omitempty"`    // If you add it
 	Metrics                   map[string]float64                 `json:"metrics,omitempty"` // Class-level aggregated metrics
 }
-
 
 // FileViewModelForDetail represents a source file within a class for server-side rendering
 type FileViewModelForDetail struct {
@@ -254,19 +259,15 @@ type SidebarElementViewModel struct {
 	CoverageTitle    string // e.g., "Line coverage: 50%"
 }
 
-
 // SummaryPageData is the top-level struct for the summaryPageLayoutTemplate
 type SummaryPageData struct {
-	ReportTitle string
-	AppVersion  string
+	ReportTitle     string
+	AppVersion      string
 	CurrentDateTime string
-	Translations map[string]string // For direct use in template
+	Translations    map[string]string // For direct use in template
 
-	SummaryCards        []CardViewModel // For the top summary cards
+	SummaryCards            []CardViewModel           // For the top summary cards
 	OverallHistoryChartData HistoryChartDataViewModel // For the overall history chart
-	
-	HasRiskHotspots bool // To show "No risk hotspots found"
-	HasAssemblies   bool // To show "No assemblies have been covered"
 
 	// For JS script includes (same as ClassDetailData)
 	AngularCssFile         string
@@ -274,16 +275,17 @@ type SummaryPageData struct {
 	AngularPolyfillsJsFile string
 	AngularMainJsFile      string
 
-	// For window.* JSON objects (same as ClassDetailData, these feed Angular components)
-	AssembliesJSON                     template.JS
-	RiskHotspotsJSON                   template.JS
-	MetricsJSON                        template.JS
-	RiskHotspotMetricsJSON             template.JS
-	HistoricCoverageExecutionTimesJSON template.JS
-	TranslationsJSON                   template.JS // Marshaled version for script
-	BranchCoverageAvailable            bool
-	MethodCoverageAvailable            bool
+	AssembliesJSON                        template.JS
+	RiskHotspotsJSON                      template.JS
+	MetricsJSON                           template.JS
+	RiskHotspotMetricsJSON                template.JS
+	HistoricCoverageExecutionTimesJSON    template.JS
+	TranslationsJSON                      template.JS // For JS data block
+	BranchCoverageAvailable               bool
+	MethodCoverageAvailable               bool
 	MaximumDecimalPlacesForCoverageQuotas int
+	HasRiskHotspots                       bool // To conditionally show "No risk hotspots found"
+	HasAssemblies                         bool // To conditionally show "No assemblies have been covered"
 }
 
 // CardViewModel represents a summary card for the Go template
@@ -305,7 +307,7 @@ type CardRowViewModel struct {
 
 // HistoryChartDataViewModel holds data for rendering a history chart with Go templates
 type HistoryChartDataViewModel struct {
-	Series     bool          // True if there's data to render the chart
-	SVGContent string        // Pre-rendered SVG string
-	JSONData   template.JS   // JSON data for chart interactivity (if custom.js uses it)
+	Series     bool        // True if there's data to render the chart
+	SVGContent string      // Pre-rendered SVG string
+	JSONData   template.JS // JSON data for chart interactivity (if custom.js uses it)
 }

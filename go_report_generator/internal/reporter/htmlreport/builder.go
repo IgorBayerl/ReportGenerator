@@ -50,30 +50,30 @@ type HTMLReportData struct {
 
 type HtmlReportBuilder struct {
 	OutputDir     string
-	ReportContext reporting.IReportContext // Store the context
+	ReportContext reporting.IReportContext
 
-	// Fields for pre-marshaled global JSON data, accessible by all page generation methods
+	// Cached data for reuse across page generations
 	angularCssFile                     string
 	angularRuntimeJsFile               string
 	angularPolyfillsJsFile             string
 	angularMainJsFile                  string
-	assembliesJSON                     template.JS
-	riskHotspotsJSON                   template.JS
-	metricsJSON                        template.JS
-	riskHotspotMetricsJSON             template.JS
-	historicCoverageExecutionTimesJSON template.JS
-	translationsJSON                   template.JS // Marshaled translations for <script> block
+	assembliesJSON                     template.JS // For summary page and class detail page window.assemblies
+	riskHotspotsJSON                   template.JS // For summary page and class detail page window.riskHotspots
+	metricsJSON                        template.JS // For summary page and class detail page window.metrics
+	riskHotspotMetricsJSON             template.JS // For summary page and class detail page window.riskHotspotMetrics
+	historicCoverageExecutionTimesJSON template.JS // For summary page and class detail page window.historicCoverageExecutionTimes
+	translationsJSON                   template.JS // For summary page and class detail page window.translations
 
 	// Settings derived from context
 	branchCoverageAvailable               bool
-	methodCoverageAvailable               bool // For PRO feature display
+	methodCoverageAvailable               bool
 	maximumDecimalPlacesForCoverageQuotas int
 	parserName                            string
 	reportTimestamp                       int64
 	reportTitle                           string
 	tag                                   string
-	translations                          map[string]string // Raw translations map for Go template text
-	onlySummary                           bool              // TODO: This flag might need to be set based on ReportContext.Settings if it exists
+	translations                          map[string]string
+	onlySummary                           bool
 }
 
 func NewHtmlReportBuilder(outputDir string, reportCtx reporting.IReportContext) *HtmlReportBuilder {
@@ -83,9 +83,11 @@ func NewHtmlReportBuilder(outputDir string, reportCtx reporting.IReportContext) 
 	}
 }
 
+// ReportType returns the type of report this builder generates.
 func (b *HtmlReportBuilder) ReportType() string {
 	return "Html"
 }
+
 
 func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	if b.ReportContext == nil {

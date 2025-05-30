@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"math"
 	"os" // Ensure os is imported
 	"regexp"
 	"strconv"
@@ -122,6 +123,7 @@ func processClassGroup(
 		Files:       []model.CodeFile{},
 		Methods:     []model.Method{},
 		// BranchesCovered and BranchesValid will be nil
+		Metrics: make(map[string]float64), // Initialize metrics map
 	}
 	classProcessedFilePaths := make(map[string]struct{})
 
@@ -206,8 +208,6 @@ func processClassGroup(
 				continue
 			}
 			classModel.Methods = append(classModel.Methods, *method)
-			// Aggregate method branch data if methods also have branch pointers
-			// For now, method branch data contributes to class via fragmentMetrics
 		}
 	}
 
@@ -219,6 +219,70 @@ func processClassGroup(
 	for path := range classProcessedFilePaths {
 		if lineCount, ok := uniqueFilePathsForGrandTotalLines[path]; ok {
 			classModel.TotalLines += lineCount
+		}
+	}
+
+	// Aggregate method counts
+	var coveredM, fullyCoveredM, totalM int
+	if classModel.Methods != nil {
+		totalM = len(classModel.Methods)
+		for _, method := range classModel.Methods {
+			methodHasCoverableLines := false
+			methodIsFullyCovered := true // Assume fully covered until a non-covered coverable line is found
+
+			if len(method.Lines) == 0 { // A method with no lines cannot be fully covered or covered.
+				methodIsFullyCovered = false
+			} else {
+				atLeastOneLineCoveredInMethod := false
+				for _, line := range method.Lines {
+					if line.Hits >= 0 { // Line is coverable
+						methodHasCoverableLines = true
+						if line.Hits > 0 {
+							atLeastOneLineCoveredInMethod = true
+						} else { // line.Hits == 0 means coverable but not covered
+							methodIsFullyCovered = false // Not fully covered if any coverable line is not hit
+						}
+					}
+				}
+				if atLeastOneLineCoveredInMethod { // If any line in the method is covered, the method is considered "covered"
+					coveredM++
+				}
+				if !methodHasCoverableLines { // If method has lines, but none are coverable, it's not "fully covered" by our definition.
+					methodIsFullyCovered = false
+				}
+			}
+
+			if methodIsFullyCovered { // Only count if it has coverable lines and all are covered
+				fullyCoveredM++
+			}
+		}
+	}
+	classModel.CoveredMethods = coveredM
+	classModel.FullyCoveredMethods = fullyCoveredM
+	classModel.TotalMethods = totalM
+
+	// Aggregate metrics
+	if classModel.Methods != nil {
+		for _, method := range classModel.Methods {
+			if method.MethodMetrics != nil {
+				for _, methodMetric := range method.MethodMetrics {
+					if methodMetric.Metrics != nil {
+						for _, metric := range methodMetric.Metrics {
+							if metric.Name == "" {
+								continue
+							}
+							if valFloat, ok := metric.Value.(float64); ok {
+								if !math.IsNaN(valFloat) && !math.IsInf(valFloat, 0) {
+									// For summary, sum complexities. Other metrics might need different aggregation (e.g., average).
+									// C# logic: if MetricType.CoverageAbsolute sum, else (CodeQuality) Max or Min.
+									// Here, we'll sum for simplicity as Angular VM expects a single float64.
+									classModel.Metrics[metric.Name] += valFloat
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
