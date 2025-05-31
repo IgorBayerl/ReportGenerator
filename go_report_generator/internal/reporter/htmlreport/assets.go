@@ -58,7 +58,7 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 		"custom.css",
 		"custom.js",
 		"chartist.min.css",
-		"chartist.min.js", 
+		"chartist.min.js",
 		"custom-azurepipelines.css",
 		"custom-azurepipelines_adaptive.css",
 		"custom-azurepipelines_dark.css",
