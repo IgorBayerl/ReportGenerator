@@ -196,7 +196,9 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 			// Attempt to set same permissions as source file
 			srcFileInfo, statErr := d.Info()
 			if statErr == nil {
-				os.Chmod(dstPath, srcFileInfo.Mode()) // This might fail on some systems/permissions, but try
+				if chmodErr := os.Chmod(dstPath, srcFileInfo.Mode()); chmodErr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to set permissions on %s: %v\n", dstPath, chmodErr)
+				}
 			}
 		}
 		return nil

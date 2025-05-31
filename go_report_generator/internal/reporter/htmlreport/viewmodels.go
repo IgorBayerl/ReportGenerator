@@ -54,15 +54,6 @@ type AngularMetricViewModel struct {
 	ExplanationURL string `json:"explanationUrl"`
 }
 
-// AngularMethodMetricViewModel represents a row in the "Metrics" table on class page
-type AngularMethodMetricViewModel struct {
-	Name         string                        `json:"name"`    // Short/Display name of the method/property
-	FullName     string                        `json:"fname"`   // Full unique name
-	FileIndex    int                           `json:"fidx"`    // Index of the file this method belongs to (for linking)
-	Line         int                           `json:"line"`    // First line of the method
-	MetricValues []AngularMetricValueViewModel `json:"mvalues"` // Key: Metric Name (e.g. "Cyclomatic Complexity"), Value: formatted string
-}
-
 // AngularCodeElementViewModel represents an item in the "Methods/Properties" sidebar
 type AngularCodeElementViewModel struct {
 	Name      string   `json:"name"`  // Display name (e.g., MyMethod(...))
@@ -128,13 +119,6 @@ type AngularRiskHotspotMetricHeaderViewModel struct {
 	Name           string `json:"name"`
 	Abbreviation   string `json:"abbreviation,omitempty"` // Make consistent with Angular model
 	ExplanationURL string `json:"explanationUrl"`
-}
-
-// AngularMetricValueViewModel represents a specific metric's value (e.g., Complexity: 5)
-type AngularMetricValueViewModel struct {
-	Name  string  `json:"name"`  // e.g., "Cyclomatic Complexity"
-	Value float64 `json:"value"` // The numeric value
-	// Status int     `json:"status"` // Status might not be directly used by C# equivalent's simple metrics table
 }
 
 // AngularMetricDefinitionViewModel describes a metric type for table headers
