@@ -16,6 +16,7 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
+// ... (generateClassDetailHTML, buildClassViewModelForDetailServer, and other helpers remain the same as previous correct version)
 func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, classReportFilename string, tag string) error {
 	// 1. Build the main ClassViewModelForDetail (server-side rendering focus)
 	classVM := b.buildClassViewModelForDetailServer(classModel, tag)
@@ -37,11 +38,10 @@ func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, cla
 	return b.renderClassDetailPage(templateData, classReportFilename)
 
 }
-
 func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model.Class, tag string) ClassViewModelForDetail {
 	cvm := ClassViewModelForDetail{
 		Name:         classModel.DisplayName,
-		AssemblyName: classModel.Name, // Placeholder, adjust if AssemblyName is available differently
+		AssemblyName: classModel.Name,
 		IsMultiFile:  len(classModel.Files) > 1,
 	}
 	if dotIndex := strings.LastIndex(classModel.Name, "."); dotIndex > -1 && dotIndex < len(classModel.Name)-1 {
@@ -59,78 +59,41 @@ func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model
 	b.populateHistoricCoveragesForClassVM(&cvm, classModel)
 	b.populateAggregatedMetricsForClassVM(&cvm, classModel)
 
-	var allMethodMetricsForClass []*model.MethodMetric
-	
-	// Store file short paths and original index for CodeElements
-	type codeElementWithContext struct {
-		element       *model.CodeElement
-		fileShortPath string
-		fileIndexPlus1 int
-	}
-	var allCodeElementsWithContext []codeElementWithContext
+	var allMethodMetricsForClass []*model.MethodMetric 
 
-
-	// Sort files by path for consistent file processing order if needed elsewhere,
-	// and for correct fileIndexPlus1 if class is multi-file.
 	sortedFiles := make([]model.CodeFile, len(classModel.Files))
 	copy(sortedFiles, classModel.Files)
 	sort.Slice(sortedFiles, func(i, j int) bool {
 		return sortedFiles[i].Path < sortedFiles[j].Path
 	})
 
-	// First pass: Build FileViewModels and collect all CodeElements
 	for fileIdx, fileInClassValue := range sortedFiles {
-		fileInClass := fileInClassValue // Loop variable
-		fileVM, _, err := b.buildFileViewModelForServerRender(&fileInClass) // Pass pointer
+		fileInClass := fileInClassValue 
+		fileVM, _, err := b.buildFileViewModelForServerRender(&fileInClass)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not build file view model for %s: %v\n", fileInClass.Path, err)
 			continue
 		}
-		cvm.Files = append(cvm.Files, fileVM) // Add file view model
+		cvm.Files = append(cvm.Files, fileVM) 
 
 		for i := range fileInClass.MethodMetrics {
 			allMethodMetricsForClass = append(allMethodMetricsForClass, &fileInClass.MethodMetrics[i])
 		}
-		
-		// Collect CodeElements with their file context
-		// fileInClass.CodeElements is already sorted by line within this file by the analyzer
+
 		for i := range fileInClass.CodeElements {
 			codeElem := &fileInClass.CodeElements[i]
-			allCodeElementsWithContext = append(allCodeElementsWithContext, codeElementWithContext{
-				element: codeElem,
-				fileShortPath: fileVM.ShortPath,
-				fileIndexPlus1: fileIdx + 1,
-			})
+			sidebarElem := b.buildSidebarElementViewModel(codeElem, fileVM.ShortPath, fileIdx+1, len(sortedFiles) > 1)
+			cvm.SidebarElements = append(cvm.SidebarElements, sidebarElem)
 		}
 	}
-
-	// Sort ALL collected CodeElements globally for the class by line number
-	sort.Slice(allCodeElementsWithContext, func(i, j int) bool {
-		elemI := allCodeElementsWithContext[i].element
-		elemJ := allCodeElementsWithContext[j].element
-		// Use the GetFirstLine and GetSortableName methods for consistency with the sorter interface
-		// though direct field access is also fine here since we have the concrete types.
-		if elemI.GetFirstLine() == elemJ.GetFirstLine() {
-			return elemI.GetSortableName() < elemJ.GetSortableName()
-		}
-		return elemI.GetFirstLine() < elemJ.GetFirstLine()
-	})
-	
-	// Second pass: Populate sidebar elements from the globally sorted list
-	for _, ceCtx := range allCodeElementsWithContext {
-		sidebarElem := b.buildSidebarElementViewModel(ceCtx.element, ceCtx.fileShortPath, ceCtx.fileIndexPlus1, len(sortedFiles) > 1)
-		cvm.SidebarElements = append(cvm.SidebarElements, sidebarElem)
-	}
-
 
 	if len(allMethodMetricsForClass) > 0 {
-		cvm.FilesWithMetrics = true
-		cvm.MetricsTable = b.buildMetricsTableForClassVM(classModel, allMethodMetricsForClass) // This already sorts methods globally
+		cvm.FilesWithMetrics = true 
+		cvm.MetricsTable = b.buildMetricsTableForClassVM(classModel) // Pass the original classModel
 	}
 
 	return cvm
 }
-
 func (b *HtmlReportBuilder) populateLineCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
 	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas
 	lineCoverage := utils.CalculatePercentage(cvm.CoveredLines, cvm.CoverableLines, decimalPlaces)
@@ -144,13 +107,10 @@ func (b *HtmlReportBuilder) populateLineCoverageMetricsForClassVM(cvm *ClassView
 		cvm.CoverageRatioTextForDisplay = "-"
 	}
 }
-
 func (b *HtmlReportBuilder) populateBranchCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
-	// Ensure b.branchCoverageAvailable is correctly set in the HtmlReportBuilder
 	if b.branchCoverageAvailable && classModel.BranchesValid != nil && *classModel.BranchesValid > 0 && classModel.BranchesCovered != nil {
 		cvm.CoveredBranches = *classModel.BranchesCovered
 		cvm.TotalBranches = *classModel.BranchesValid
-		// Use utils.CalculatePercentage and utils.FormatPercentage
 		decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas
 		branchCoverage := utils.CalculatePercentage(*classModel.BranchesCovered, *classModel.BranchesValid, decimalPlaces)
 		cvm.BranchCoveragePercentageForDisplay = utils.FormatPercentage(branchCoverage, decimalPlaces)
@@ -163,16 +123,15 @@ func (b *HtmlReportBuilder) populateBranchCoverageMetricsForClassVM(cvm *ClassVi
 			cvm.BranchCoverageRatioTextForDisplay = "-"
 		}
 	} else {
-		cvm.BranchCoveragePercentageForDisplay = "N/A" // From translations ideally
+		cvm.BranchCoveragePercentageForDisplay = "N/A"
 		cvm.BranchCoveragePercentageBarValue = 0
 		cvm.BranchCoverageRatioTextForDisplay = "-"
 	}
 }
-
 func (b *HtmlReportBuilder) populateMethodCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
-	cvm.TotalMethods = classModel.TotalMethods               // Use pre-calculated from model.Class
-	cvm.CoveredMethods = classModel.CoveredMethods           // Use pre-calculated
-	cvm.FullyCoveredMethods = classModel.FullyCoveredMethods // Use pre-calculated
+	cvm.TotalMethods = classModel.TotalMethods
+	cvm.CoveredMethods = classModel.CoveredMethods
+	cvm.FullyCoveredMethods = classModel.FullyCoveredMethods
 
 	if cvm.TotalMethods > 0 {
 		methodCov := (float64(cvm.CoveredMethods) / float64(cvm.TotalMethods)) * 100.0
@@ -189,15 +148,13 @@ func (b *HtmlReportBuilder) populateMethodCoverageMetricsForClassVM(cvm *ClassVi
 		cvm.FullMethodCoveragePercentageForDisplay = "N/A"
 		cvm.FullMethodCoverageRatioTextForDisplay = "-"
 	}
-
 }
-
 func (b *HtmlReportBuilder) populateHistoricCoveragesForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
 	if classModel.HistoricCoverages == nil {
 		return
 	}
 	for _, hist := range classModel.HistoricCoverages {
-		angularHist := b.buildAngularHistoricCoverageViewModel(&hist) // Re-use for consistency
+		angularHist := b.buildAngularHistoricCoverageViewModel(&hist)
 		cvm.HistoricCoverages = append(cvm.HistoricCoverages, angularHist)
 		if angularHist.LineCoverageQuota >= 0 {
 			cvm.LineCoverageHistory = append(cvm.LineCoverageHistory, angularHist.LineCoverageQuota)
@@ -207,15 +164,12 @@ func (b *HtmlReportBuilder) populateHistoricCoveragesForClassVM(cvm *ClassViewMo
 		}
 	}
 }
-
 func (b *HtmlReportBuilder) populateAggregatedMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
-	// Assumes model.Class.Metrics is already populated with aggregated metrics
 	cvm.Metrics = make(map[string]float64)
 	for name, val := range classModel.Metrics {
 		cvm.Metrics[name] = val
 	}
 }
-
 func (b *HtmlReportBuilder) buildFileViewModelForServerRender(fileInClass *model.CodeFile) (FileViewModelForDetail, []string, error) {
 	fileVM := FileViewModelForDetail{
 		Path:      fileInClass.Path,
@@ -241,10 +195,9 @@ func (b *HtmlReportBuilder) buildFileViewModelForServerRender(fileInClass *model
 	}
 	return fileVM, sourceLines, nil
 }
-
 func (b *HtmlReportBuilder) buildLineViewModelForServerRender(lineContent string, actualLineNumber int, modelCovLine *model.Line, hasCoverageData bool) LineViewModelForDetail {
 	lineVM := LineViewModelForDetail{LineNumber: actualLineNumber, LineContent: lineContent}
-	dataCoverageMap := map[string]map[string]string{"AllTestMethods": {"VC": "", "LVS": "gray"}} // Default
+	dataCoverageMap := map[string]map[string]string{"AllTestMethods": {"VC": "", "LVS": "gray"}} 
 
 	if hasCoverageData {
 		lineVM.Hits = fmt.Sprintf("%d", modelCovLine.Hits)
@@ -268,7 +221,7 @@ func (b *HtmlReportBuilder) buildLineViewModelForServerRender(lineContent string
 			lineVM.Tooltip = fmt.Sprintf("Not covered (%d visits%s)", modelCovLine.Hits, tooltipBranchRate)
 		case lineVisitStatusPartiallyCovered:
 			lineVM.Tooltip = fmt.Sprintf("Partially covered (%d visits%s)", modelCovLine.Hits, tooltipBranchRate)
-		default: // lineVisitStatusNotCoverable
+		default: 
 			lineVM.Tooltip = "Not coverable"
 		}
 	} else {
@@ -276,16 +229,15 @@ func (b *HtmlReportBuilder) buildLineViewModelForServerRender(lineContent string
 		lineVM.Hits = ""
 		lineVM.Tooltip = "Not coverable"
 	}
-	dataCoverageBytes, _ := json.Marshal(dataCoverageMap) // Error handling for marshal can be added
+	dataCoverageBytes, _ := json.Marshal(dataCoverageMap) 
 	lineVM.DataCoverage = template.JS(dataCoverageBytes)
 	return lineVM
 
 }
-
 func (b *HtmlReportBuilder) buildSidebarElementViewModel(codeElem *model.CodeElement, fileShortPath string, fileIndexPlus1 int, isMultiFile bool) SidebarElementViewModel {
 	sidebarElem := SidebarElementViewModel{
-		Name:          codeElem.Name,     // This is now the short, display-friendly name
-		FullName:      codeElem.FullName, // This is now the full, cleaned name
+		Name:          codeElem.Name,    
+		FullName:      codeElem.FullName, 
 		FileShortPath: fileShortPath,
 		Line:          codeElem.FirstLine,
 		Icon:          "cube",
@@ -305,51 +257,39 @@ func (b *HtmlReportBuilder) buildSidebarElementViewModel(codeElem *model.CodeEle
 		sidebarElem.CoverageBarValue = -1
 		coverageTitleText = "Line coverage: N/A"
 	}
-	// Use FullName for the detailed part of the title
 	sidebarElem.CoverageTitle = fmt.Sprintf("%s - %s", coverageTitleText, codeElem.FullName)
 	return sidebarElem
 }
-
-// getStandardMetricHeaders defines the order and names of metrics for the table.
 func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinitionViewModel {
-	standardMetricKeys := []string{ // Use non-translated keys here for logic
+	standardMetricKeys := []string{ 
 		"Branch coverage",
 		"CrapScore",
 		"Cyclomatic complexity",
 		"Line coverage",
 	}
-
 	var headers []AngularMetricDefinitionViewModel
 	for _, key := range standardMetricKeys {
 		translatedName := b.translations[key]
 		if translatedName == "" {
-			translatedName = key // Fallback to key if translation missing
+			translatedName = key 
 		}
 		headers = append(headers, AngularMetricDefinitionViewModel{
 			Name:           translatedName,
-			ExplanationURL: b.getMetricExplanationURL(key), // Use key for explanation URL
+			ExplanationURL: b.getMetricExplanationURL(key), 
 		})
 	}
 	return headers
 }
-
-// findCorrespondingCodeElement links a model.Method to its model.CodeElement.
-// This is crucial for getting display names, proper links, and coverage quotas.
 func findCorrespondingCodeElement(method *model.Method, classModel *model.Class) (*model.CodeElement, string, int) {
-	// Iterate over sorted files for deterministic search if files are not already sorted
-	// but classModel.Files used here should be the same as used for sidebar generation
 	sortedFiles := make([]model.CodeFile, len(classModel.Files))
 	copy(sortedFiles, classModel.Files)
 	sort.Slice(sortedFiles, func(i, j int) bool {
 		return sortedFiles[i].Path < sortedFiles[j].Path
 	})
-
 	for fIdx, fValue := range sortedFiles {
-		f := fValue // loop variable
-		// CodeElements within f are already sorted by line by the analyzer
+		f := fValue 
 		for i := range f.CodeElements {
-			ce := &f.CodeElements[i] // Use pointer
-			// Match based on FirstLine and the method's cleaned DisplayName against CE's FullName
+			ce := &f.CodeElements[i] 
 			if ce.FirstLine == method.FirstLine && ce.FullName == method.DisplayName {
 				fileShortPath := utils.ReplaceInvalidPathChars(filepath.Base(f.Path))
 				return ce, fileShortPath, fIdx + 1
@@ -358,8 +298,6 @@ func findCorrespondingCodeElement(method *model.Method, classModel *model.Class)
 	}
 	return nil, "", 0
 }
-
-// buildSingleMetricRow creates one AngularMethodMetricsViewModel for a method.
 func (b *HtmlReportBuilder) buildSingleMetricRow(
 	method *model.Method,
 	correspondingCE *model.CodeElement,
@@ -367,38 +305,29 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 	fileIndexPlus1 int,
 	headers []AngularMetricDefinitionViewModel,
 ) AngularMethodMetricsViewModel {
-
-	var fullNameForTitle string // This will be the cleaned full name
+	var fullNameForTitle string 
 	var lineToLink int
 	var isProperty bool
 	var coverageQuota *float64
-
-	// Use the pre-cleaned DisplayName from the method model
 	cleanedFullName := method.DisplayName
 	fullNameForTitle = cleanedFullName
-
-	// Construct the full name first, which might be from CodeElement or model.Method
 	if correspondingCE != nil {
 		lineToLink = correspondingCE.FirstLine
 		isProperty = (correspondingCE.Type == model.PropertyElementType)
 		coverageQuota = correspondingCE.CoverageQuota
 	} else {
-		// Fallback if CodeElement wasn't found
 		lineToLink = method.FirstLine
-		// Determine if it's a property based on the cleaned name
 		isProperty = strings.HasPrefix(cleanedFullName, "get_") || strings.HasPrefix(cleanedFullName, "set_")
 	}
-
 	var shortDisplayNameForTable string
 	if isProperty {
 		shortDisplayNameForTable = cleanedFullName
 	} else {
 		shortDisplayNameForTable = utils.GetShortMethodName(cleanedFullName)
 	}
-
 	row := AngularMethodMetricsViewModel{
-		Name:           shortDisplayNameForTable, // Use the "short" version for table display
-		FullName:       fullNameForTitle,         // Use the fuller version for tooltips
+		Name:           shortDisplayNameForTable, 
+		FullName:       fullNameForTitle,         
 		FileIndexPlus1: fileIndexPlus1,
 		Line:           lineToLink,
 		FileShortPath:  fileShortPath,
@@ -406,18 +335,14 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 		CoverageQuota:  coverageQuota,
 		MetricValues:   make([]string, len(headers)),
 	}
-
-	// Populate metric values (logic remains the same as previous correct version)
 	methodMetricsMap := make(map[string]model.Metric)
 	for _, mm := range method.MethodMetrics {
 		for _, m := range mm.Metrics {
 			methodMetricsMap[m.Name] = m
 		}
 	}
-
 	for i, headerVM := range headers {
 		var originalMetricKey string
-		// Simplified reverse lookup for known standard keys (assuming Option A for viewmodel is not yet implemented)
 		switch headerVM.Name {
 		case b.translations["Branch coverage"]:
 			originalMetricKey = "Branch coverage"
@@ -427,11 +352,9 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 			originalMetricKey = "Cyclomatic complexity"
 		case b.translations["Line coverage"]:
 			originalMetricKey = "Line coverage"
-		default: // Fallback if not one of the standard translated ones, or translation matches key
-			originalMetricKey = headerVM.Name // This assumes headerVM.Name is the key if not found in above cases
-			// A more robust reverse lookup might still be needed if translations are complex
-			// or if you implement Option A for AngularMetricDefinitionViewModel.OriginalKey
-			if _, ok := methodMetricsMap[originalMetricKey]; !ok { // If direct match fails, iterate translations
+		default: 
+			originalMetricKey = headerVM.Name 
+			if _, ok := methodMetricsMap[originalMetricKey]; !ok { 
 				for key, translatedVal := range b.translations {
 					if translatedVal == headerVM.Name && (key == "Branch coverage" || key == "CrapScore" || key == "Cyclomatic complexity" || key == "Line coverage" || key == "Complexity") {
 						originalMetricKey = key
@@ -456,41 +379,142 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 	return row
 }
 
-func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class, _ []*model.MethodMetric) MetricsTableViewModel {
+
+// buildMetricsTableForClassVM constructs the view model for the metrics table.
+// It collects all methods from all files within the class and sorts them
+// primarily by file path, then by line number, then by short method name.
+func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class) MetricsTableViewModel {
 	metricsTable := MetricsTableViewModel{}
 	metricsTable.Headers = b.getStandardMetricHeaders()
 
-	if len(classModel.Methods) == 0 {
+	if len(classModel.Methods) == 0 && len(classModel.Files) == 0 { // Check if there are any files to iterate
 		return metricsTable
 	}
 
-	// Create a mutable copy of methods to sort
-	// model.Method is a struct, so we need a slice of model.Method values.
-	sortedMethods := make([]model.Method, len(classModel.Methods))
-	copy(sortedMethods, classModel.Methods)
+	// Create a temporary struct to hold methods along with their file context for sorting
+	type methodWithFileContext struct {
+		method         *model.Method
+		filePath       string // Full path for primary sort
+		fileShortPath  string // For linking
+		fileIndexPlus1 int    // For display in multi-file scenarios
+	}
+	var allMethodsWithContext []methodWithFileContext
 
-	// Sort methods using the generic sorter
-	utils.SortByLineAndName(sortedMethods) // This should now work
+	// Sort files first to ensure consistent file indexing and path usage
+	sortedFiles := make([]model.CodeFile, len(classModel.Files))
+	copy(sortedFiles, classModel.Files)
+	sort.Slice(sortedFiles, func(i, j int) bool {
+		return sortedFiles[i].Path < sortedFiles[j].Path
+	})
 
-	for i := range sortedMethods {
-		methodPtr := &sortedMethods[i] // Get a pointer to the method in the sorted slice
+	// Collect all methods from all files, associating them with their file context
+	for fileIdx, file := range sortedFiles {
+		// Methods within a CodeFile's MethodMetrics list might not be what we want directly.
+		// We need to iterate through model.Method objects that are part of the classModel.Methods,
+		// and then find which file they belong to for sorting.
+		// A better way: iterate classModel.Methods, and for each method, find its file.
+		// However, model.Method doesn't directly link back to a specific model.CodeFile.
+		// We need to find the methods that are defined within this specific file.
+		// The model.Method.FirstLine and model.Method.DisplayName are key.
+		// model.CodeFile.CodeElements helps link method display names to file lines.
 
-		correspondingCE, fileShortPath, fileIndexPlus1 := findCorrespondingCodeElement(methodPtr, classModel)
+		// Let's find methods that are defined in *this* specific file (file)
+		// by checking if their first line is within this file's scope
+		// and if a corresponding code element exists.
+		for methIdx := range classModel.Methods {
+			method := &classModel.Methods[methIdx]
+			// Check if this method is primarily defined in the current file
+			// This is a bit heuristic: a method might span files in partial classes,
+			// but for metrics, we usually associate it with its main definition file.
+			// The `CodeElement` for this method within `file.CodeElements` will confirm.
+			var foundInThisFile bool
+			for ceIdx := range file.CodeElements {
+				ce := &file.CodeElements[ceIdx]
+				if ce.FirstLine == method.FirstLine && ce.FullName == method.DisplayName {
+					foundInThisFile = true
+					break
+				}
+			}
 
-		if correspondingCE == nil {
-			fmt.Fprintf(os.Stderr, "Warning: Could not find corresponding CodeElement for method %s (line %d) in class %s for metrics table. Using fallback naming.\n", methodPtr.DisplayName, methodPtr.FirstLine, classModel.DisplayName)
+			if foundInThisFile {
+				allMethodsWithContext = append(allMethodsWithContext, methodWithFileContext{
+					method:         method,
+					filePath:       file.Path, // Full path of the file
+					fileShortPath:  utils.ReplaceInvalidPathChars(filepath.Base(file.Path)),
+					fileIndexPlus1: fileIdx + 1,
+				})
+			}
+		}
+	}
+
+	// Sort all collected methods:
+	// 1. Primary: File Path
+	// 2. Secondary: Method's First Line
+	// 3. Tertiary: Method's Short Display Name
+	sort.Slice(allMethodsWithContext, func(i, j int) bool {
+		itemI := allMethodsWithContext[i]
+		itemJ := allMethodsWithContext[j]
+
+		if itemI.filePath != itemJ.filePath {
+			return itemI.filePath < itemJ.filePath
+		}
+		if itemI.method.FirstLine != itemJ.method.FirstLine {
+			return itemI.method.FirstLine < itemJ.method.FirstLine
+		}
+		return utils.GetShortMethodName(itemI.method.DisplayName) < utils.GetShortMethodName(itemJ.method.DisplayName)
+	})
+
+	// Now build the rows from the sorted list
+	for _, mCtx := range allMethodsWithContext {
+		// Find the CodeElement again, this time specifically for the method in its context
+		// (or pass it if already available from a more direct link)
+		var correspondingCE *model.CodeElement
+		for _, f := range classModel.Files { // Iterate original files to find the CE
+			if f.Path == mCtx.filePath {
+				for ceIdx := range f.CodeElements {
+					ce := &f.CodeElements[ceIdx]
+					if ce.FirstLine == mCtx.method.FirstLine && ce.FullName == mCtx.method.DisplayName {
+						correspondingCE = ce
+						break
+					}
+				}
+			}
+			if correspondingCE != nil {
+				break
+			}
+		}
+		
+		if correspondingCE == nil && len(mCtx.method.MethodMetrics) > 0 && mCtx.method.MethodMetrics[0].Line == mCtx.method.FirstLine {
+			// Fallback: Create a temporary CodeElement if it's truly missing but metrics exist for the method at its first line.
+			// This situation suggests an inconsistency or a method that exists in metrics but not explicitly in CodeElements.
+			// For metrics table purposes, we primarily need FirstLine, FullName (as DisplayName), and Type (Method).
+			// The CoverageQuota for the method itself might be derived if available.
+			var methCovQuota *float64
+			if !math.IsNaN(mCtx.method.LineRate) {
+				 lrq := mCtx.method.LineRate * 100.0
+				 methCovQuota = &lrq
+			}
+			correspondingCE = &model.CodeElement{
+				Name: mCtx.method.DisplayName, // Use display name as short name for this fallback
+				FullName: mCtx.method.DisplayName,
+				Type: model.MethodElementType,
+				FirstLine: mCtx.method.FirstLine,
+				LastLine: mCtx.method.LastLine, // Approx
+				CoverageQuota: methCovQuota,
+			}
+			// This warning is now more specific to metric table generation for a method without a clear CE
+			fmt.Fprintf(os.Stderr, "Metrics Table Warning: Could not find exact CodeElement for method %s (line %d) in class %s for file %s. Using method data as fallback for table row.\n", mCtx.method.DisplayName, mCtx.method.FirstLine, classModel.DisplayName, mCtx.filePath)
 		}
 
-		row := b.buildSingleMetricRow(methodPtr, correspondingCE, fileShortPath, fileIndexPlus1, metricsTable.Headers)
+
+		row := b.buildSingleMetricRow(mCtx.method, correspondingCE, mCtx.fileShortPath, mCtx.fileIndexPlus1, metricsTable.Headers)
 		metricsTable.Rows = append(metricsTable.Rows, row)
 	}
 
 	return metricsTable
 }
-
-// getMetricExplanationURL (ensure keys match those in getStandardMetricHeaders)
 func (b *HtmlReportBuilder) getMetricExplanationURL(metricKey string) string {
-	switch metricKey { // Use the non-translated key
+	switch metricKey { 
 	case "Cyclomatic complexity", "Complexity":
 		return "https://en.wikipedia.org/wiki/Cyclomatic_complexity"
 	case "CrapScore":
@@ -501,8 +525,6 @@ func (b *HtmlReportBuilder) getMetricExplanationURL(metricKey string) string {
 		return ""
 	}
 }
-
-// formatMetricValue (ensure metric.Name matches the keys used in method.MethodMetrics)
 func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 	if metric.Value == nil {
 		return "-"
@@ -514,18 +536,15 @@ func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 		}
 		return fmt.Sprintf("%v", metric.Value)
 	}
-
 	if math.IsNaN(valFloat) {
 		return "NaN"
 	}
 	if math.IsInf(valFloat, 0) {
 		return "Inf"
 	}
-
-	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas // Use from builder
-
+	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas 
 	switch metric.Name {
-	case "Line coverage", "Branch coverage": // These are already percentages
+	case "Line coverage", "Branch coverage": 
 		return utils.FormatPercentage(valFloat, decimalPlaces)
 	case "CrapScore":
 		return fmt.Sprintf("%.2f", valFloat)
@@ -535,9 +554,7 @@ func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 		return fmt.Sprintf(fmt.Sprintf("%%.%df", decimalPlaces), valFloat)
 	}
 }
-
 func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class, classVMServer *ClassViewModelForDetail) (AngularClassDetailViewModel, error) {
-	// Basic class info from server view model or re-calculate if necessary
 	angularClassVMForJS := AngularClassViewModel{
 		Name:                  classModel.DisplayName,
 		CoveredLines:          classModel.LinesCovered,
@@ -547,10 +564,10 @@ func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class
 		CoveredMethods:        classVMServer.CoveredMethods,
 		FullyCoveredMethods:   classVMServer.FullyCoveredMethods,
 		TotalMethods:          classVMServer.TotalMethods,
-		HistoricCoverages:     classVMServer.HistoricCoverages, // Re-use from server VM
+		HistoricCoverages:     classVMServer.HistoricCoverages, 
 		LineCoverageHistory:   classVMServer.LineCoverageHistory,
 		BranchCoverageHistory: classVMServer.BranchCoverageHistory,
-		Metrics:               classVMServer.Metrics, // Re-use aggregated metrics
+		Metrics:               classVMServer.Metrics, 
 	}
 	if classModel.BranchesCovered != nil {
 		angularClassVMForJS.CoveredBranches = *classModel.BranchesCovered
@@ -558,25 +575,20 @@ func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class
 	if classModel.BranchesValid != nil {
 		angularClassVMForJS.TotalBranches = *classModel.BranchesValid
 	}
-
 	detailVM := AngularClassDetailViewModel{Class: angularClassVMForJS, Files: []AngularCodeFileViewModel{}}
 	if classModel.Files == nil {
 		return detailVM, nil
 	}
-
 	for _, fileInClass := range classModel.Files {
 		angularFileForJS, err := b.buildAngularFileViewModelForJS(&fileInClass)
 		if err != nil {
-			// Log error, but try to continue
 			fmt.Fprintf(os.Stderr, "Error building Angular file view model for JS (%s): %v\n", fileInClass.Path, err)
 			continue
 		}
 		detailVM.Files = append(detailVM.Files, angularFileForJS)
 	}
 	return detailVM, nil
-
 }
-
 func (b *HtmlReportBuilder) buildAngularFileViewModelForJS(fileInClass *model.CodeFile) (AngularCodeFileViewModel, error) {
 	angularFile := AngularCodeFileViewModel{
 		Path:           fileInClass.Path,
@@ -587,20 +599,16 @@ func (b *HtmlReportBuilder) buildAngularFileViewModelForJS(fileInClass *model.Co
 	}
 	sourceLines, err := filereader.ReadLinesInFile(fileInClass.Path)
 	if err != nil {
-		// If source can't be read, the lines array will be empty.
-		// This is consistent with C# RG behavior (no lines if file not found).
 		fmt.Fprintf(os.Stderr, "Warning: could not read source file %s for JS Angular VM: %v\n", fileInClass.Path, err)
-		return angularFile, nil // Return with empty lines, not a fatal error for this part.
+		return angularFile, nil 
 	}
-
 	coverageLinesMap := make(map[int]*model.Line)
 	if fileInClass.Lines != nil {
-		for i := range fileInClass.Lines { // Use index for pointer
+		for i := range fileInClass.Lines { 
 			covLine := &fileInClass.Lines[i]
 			coverageLinesMap[covLine.Number] = covLine
 		}
 	}
-
 	for i, content := range sourceLines {
 		actualLineNumber := i + 1
 		modelCovLine, hasCoverageData := coverageLinesMap[actualLineNumber]
@@ -608,13 +616,11 @@ func (b *HtmlReportBuilder) buildAngularFileViewModelForJS(fileInClass *model.Co
 		angularFile.Lines = append(angularFile.Lines, angularLine)
 	}
 	return angularFile, nil
-
 }
-
 func (b *HtmlReportBuilder) buildAngularLineViewModelForJS(content string, actualLineNumber int, modelCovLine *model.Line, hasCoverageData bool) AngularLineAnalysisViewModel {
 	lineVM := AngularLineAnalysisViewModel{
 		LineNumber:  actualLineNumber,
-		LineContent: content, // For JS, we send the raw content
+		LineContent: content, 
 	}
 	if hasCoverageData {
 		lineVM.Hits = modelCovLine.Hits
@@ -628,10 +634,9 @@ func (b *HtmlReportBuilder) buildAngularLineViewModelForJS(content string, actua
 }
 
 func (b *HtmlReportBuilder) buildClassDetailPageData(classVM ClassViewModelForDetail, tag string, classDetailJS template.JS) ClassDetailData {
-	appVersion := "0.0.1" // Placeholder, same as summary
+	appVersion := "0.0.1" 
 	if b.ReportContext.ReportConfiguration() != nil {
 		appVersion = "0.0.1"
-		// Logic to get actual app version if available
 	}
 	return ClassDetailData{
 		ReportTitle:                           b.reportTitle,

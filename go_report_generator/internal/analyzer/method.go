@@ -104,7 +104,7 @@ func processMethodXML(methodXML inputxml.MethodXML, sourceLines []string, classN
 		Name:        rawMethodName, // Store original name from XML for model.Method.Name
 		Signature:   rawSignature,  // Store original signature for model.Method.Signature
 		DisplayName: extractedFullNameForDisplay,
-		Complexity:  parseFloat(methodXML.Complexity),
+		Complexity:  utils.ParseFloat(methodXML.Complexity),
 	}
 
 	processMethodLines(methodXML, &method, sourceLines)
@@ -126,7 +126,7 @@ func processMethodLines(methodXML inputxml.MethodXML, method *model.Method, sour
 	var methodBranchesCovered, methodBranchesValid int
 
 	for _, lineXML := range methodXML.Lines.Line {
-		currentLineNum := parseInt(lineXML.Number)
+		currentLineNum := utils.ParseInt(lineXML.Number, 0)
 		if currentLineNum < minLine {
 			minLine = currentLineNum
 		}

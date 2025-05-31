@@ -2,142 +2,144 @@ package analyzer
 
 import (
 	"fmt"
-	"math"
-	"os"
-	"strconv"
-	"strings"
+	"time"
 
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser" // For parser.ParserResult
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
 )
 
-func Analyze(rawReport *inputxml.CoberturaRoot, sourceDirs []string) (*model.SummaryResult, error) {
-	summary := &model.SummaryResult{
-		ParserName: "Cobertura",
-		SourceDirs: sourceDirs,
+// MergeParserResults takes multiple ParserResult objects (potentially from different files
+// or even different parser types) and merges them into a single, unified model.SummaryResult.
+// The config is needed to access global settings or filters if they are applied at merge time
+// (though ideally filters are applied within each parser).
+func MergeParserResults(results []*parser.ParserResult, config reportconfig.IReportConfiguration) (*model.SummaryResult, error) {
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no parser results to merge")
+	}
+
+	finalSummary := &model.SummaryResult{
 		Assemblies: []model.Assembly{},
-		Timestamp:  processCoberturaTimestamp(rawReport.Timestamp),
+		// Initialize other fields like ParserName, Timestamps later
 	}
 
-	summary.LinesCovered = parseInt(rawReport.LinesCovered)
-	summary.LinesValid = parseInt(rawReport.LinesValid)
-
-	if rawReport.BranchesCovered != "" {
-		val := parseInt(rawReport.BranchesCovered)
-		summary.BranchesCovered = &val
-	} else {
-		summary.BranchesCovered = nil
-	}
-	if rawReport.BranchesValid != "" {
-		val := parseInt(rawReport.BranchesValid)
-		summary.BranchesValid = &val
-	} else {
-		summary.BranchesValid = nil
-	}
-
-	uniqueFilePathsForGrandTotalLines := make(map[string]int)
-
-	for _, pkgXML := range rawReport.Packages.Package {
-		assembly, err := processPackageXML(pkgXML, sourceDirs, uniqueFilePathsForGrandTotalLines)
-		if err != nil {
-			// Consider logging this error if a logging mechanism is introduced
-			fmt.Fprintf(os.Stderr, "Warning: could not process package XML: %v\n", err)
-			continue
+	// Determine overall parser name
+	parserNames := make(map[string]struct{})
+	for _, res := range results {
+		if res.ParserName != "" {
+			parserNames[res.ParserName] = struct{}{}
 		}
-		summary.Assemblies = append(summary.Assemblies, *assembly)
+	}
+	if len(parserNames) == 1 {
+		for name := range parserNames {
+			finalSummary.ParserName = name
+			break
+		}
+	} else if len(parserNames) > 1 {
+		finalSummary.ParserName = "MultiReport" // Or concatenate, e.g., "Cobertura, OpenCover"
+	} else {
+		finalSummary.ParserName = "Unknown"
 	}
 
-	if summary.BranchesCovered == nil && summary.BranchesValid == nil {
-		var totalCovered, totalValid int
-		hasAnyAssemblyBranchData := false
-		for _, asm := range summary.Assemblies {
-			if asm.BranchesCovered != nil && asm.BranchesValid != nil {
-				hasAnyAssemblyBranchData = true
-				totalCovered += *asm.BranchesCovered
-				totalValid += *asm.BranchesValid
+	// Determine overall min/max timestamps
+	var minTs, maxTs *time.Time
+	for _, res := range results {
+		if res.MinimumTimeStamp != nil {
+			if minTs == nil || res.MinimumTimeStamp.Before(*minTs) {
+				minTs = res.MinimumTimeStamp
 			}
 		}
-		if hasAnyAssemblyBranchData {
-			summary.BranchesCovered = &totalCovered
-			summary.BranchesValid = &totalValid
-		} else {
-			summary.BranchesCovered = nil
-			summary.BranchesValid = nil
+		if res.MaximumTimeStamp != nil {
+			if maxTs == nil || res.MaximumTimeStamp.After(*maxTs) {
+				maxTs = res.MaximumTimeStamp
+			}
+		}
+	}
+	if minTs != nil {
+		finalSummary.Timestamp = minTs.Unix() // Or handle range if min/max differ significantly
+	}
+
+	// Collect all source directories
+	allSourceDirsSet := make(map[string]struct{})
+	for _, res := range results {
+		for _, dir := range res.SourceDirectories {
+			allSourceDirsSet[dir] = struct{}{}
+		}
+	}
+	for dir := range allSourceDirsSet {
+		finalSummary.SourceDirs = append(finalSummary.SourceDirs, dir)
+	}
+
+	// Merge assemblies
+	mergedAssembliesMap := make(map[string]*model.Assembly)
+	for _, res := range results {
+		for _, asmFromParser := range res.Assemblies {
+			asmCopy := asmFromParser // Work with a copy to avoid modifying original parser result data
+			if existingAsm, ok := mergedAssembliesMap[asmCopy.Name]; ok {
+				// TODO: Implement robust merge logic for assembly
+				// This involves merging classes, and then recursively files, lines, methods.
+				// For now, simple append and re-aggregate (will lead to duplicates if not careful)
+				// See C# Assembly.Merge(), Class.Merge(), CodeFile.Merge() for inspiration.
+				// This is a placeholder for complex merge:
+				existingAsm.Classes = append(existingAsm.Classes, asmCopy.Classes...) // Simplistic
+			} else {
+				mergedAssembliesMap[asmCopy.Name] = &asmCopy
+			}
 		}
 	}
 
-	for _, lines := range uniqueFilePathsForGrandTotalLines {
-		summary.TotalLines += lines
+	// Convert map to slice and re-aggregate stats for merged assemblies
+	uniqueFilesForGrandTotal := make(map[string]int)
+	for _, asm := range mergedAssembliesMap {
+		// Re-aggregate assembly stats *after* its classes might have been merged from multiple sources
+		// This is a complex step. For now, the stats on `asm` are from its last `ParserResult`.
+		// A true merge would sum up counts from constituent parts and recalculate.
+		// Placeholder for re-aggregation of asm.LinesCovered, asm.LinesValid, etc.
+		// and asm.TotalLines based on unique files within this merged assembly.
+		finalSummary.Assemblies = append(finalSummary.Assemblies, *asm)
 	}
 
-	return summary, nil
-}
+	// Aggregate global stats for finalSummary
+	var globalLinesCovered, globalLinesValid, globalTotalLines int
+	var globalBranchesCovered, globalBranchesValid int
+	hasBranchData := false
 
-// UTILS
-
-// parseInt is a utility function to parse string to int, ignoring errors for simplicity.
-func parseInt(s string) int {
-	// The C# ParseLargeInteger returns int.MaxValue on failure.
-	// Here, we'll fallback to 0 for simplicity, as the original Go code did.
-	// If int.MaxValue behavior is critical, change the fallback.
-	return utils.ParseLargeInteger(s, 0)
-}
-
-// parseFloat is a utility function to parse string to float64, ignoring errors.
-func parseFloat(s string) float64 {
-	if strings.ToLower(s) == "nan" { // Handle "NaN" case-insensitively
-		return math.NaN() // Or return 0 or a specific indicator if preferred
-	}
-	v, _ := strconv.ParseFloat(s, 64)
-	return v
-}
-
-// isValidUnixSeconds checks if a timestamp (in seconds) is within a reasonable range.
-// E.g., between 1975-01-01 and 2100-01-01.
-func isValidUnixSeconds(ts int64) bool {
-	const minValidSeconds int64 = 157766400  // Approx 1975-01-01 UTC
-	const maxValidSeconds int64 = 4102444800 // Approx 2100-01-01 UTC
-	return ts >= minValidSeconds && ts <= maxValidSeconds
-}
-
-// processCoberturaTimestamp parses the raw timestamp string from Cobertura XML.
-// It aims to extract a valid Unix timestamp in seconds.
-//
-// The Cobertura specification implies the timestamp should be Unix seconds.
-// However, different tools produce different formats:
-//   - Coverlet (C#) typically outputs Unix seconds (e.g., 10 digits).
-//   - gocover-cobertura (Go) typically outputs Unix milliseconds (e.g., 13 digits).
-//
-// The original C# ReportGenerator, when encountering a millisecond timestamp (mistaking it for seconds),
-// would calculate an erroneous far-future date, and its TextSummary report would then omit the coverage date.
-// To replicate this specific output behavior (i.e., no coverage date for gocover-cobertura XMLs,
-// but a date for Coverlet XMLs), this function will:
-// 1. Accept and return timestamps that appear to be valid Unix seconds.
-// 2. Intentionally treat timestamps that appear to be Unix milliseconds as invalid for date display (returning 0).
-// 3. Return 0 for empty, unparseable, or otherwise out-of-plausible-range timestamps.
-// A return value of 0 for the timestamp indicates to the reporter that no coverage date should be displayed.
-func processCoberturaTimestamp(rawTimestamp string) int64 {
-	if rawTimestamp == "" {
-		return 0
-	}
-
-	parsedTs, err := strconv.ParseInt(rawTimestamp, 10, 64)
-	if err != nil {
-		return 0
-	}
-
-	timestampStrLen := len(rawTimestamp)
-
-	if timestampStrLen >= 9 && timestampStrLen <= 11 { // Likely seconds
-		if isValidUnixSeconds(parsedTs) {
-			return parsedTs
+	for i := range finalSummary.Assemblies {
+		asm := &finalSummary.Assemblies[i] // Operate on the final list
+		globalLinesCovered += asm.LinesCovered
+		globalLinesValid += asm.LinesValid
+		// TotalLines for summary needs to be from unique file paths across *all* assemblies
+		for _, cls := range asm.Classes {
+			for _, f := range cls.Files {
+				if _, exists := uniqueFilesForGrandTotal[f.Path]; !exists && f.TotalLines > 0 {
+					uniqueFilesForGrandTotal[f.Path] = f.TotalLines
+					globalTotalLines += f.TotalLines
+				}
+			}
 		}
-	} else if timestampStrLen >= 12 && timestampStrLen <= 14 { // Likely milliseconds
-		// Intentionally return 0 to not display a date for these, mimicking C# RG behavior.
-		return 0
+
+		if asm.BranchesCovered != nil && asm.BranchesValid != nil {
+			hasBranchData = true
+			globalBranchesCovered += *asm.BranchesCovered
+			globalBranchesValid += *asm.BranchesValid
+		}
 	}
 
-	// For any other case (unusual length, or "seconds-like" but invalid value)
-	return 0
+	finalSummary.LinesCovered = globalLinesCovered
+	finalSummary.LinesValid = globalLinesValid
+	finalSummary.TotalLines = globalTotalLines
+	if hasBranchData {
+		finalSummary.BranchesCovered = &globalBranchesCovered
+		finalSummary.BranchesValid = &globalBranchesValid
+	}
+
+	return finalSummary, nil
 }
+
+// NOTE: The old `analyzer.Analyze` function should be DELETED.
+// The files `analyzer/assembly.go`, `analyzer/class.go`, `analyzer/codefile.go`,
+// `analyzer/line.go`, `analyzer/method.go` should also be DELETED or have their
+// Cobertura-specific logic moved to `internal/parser/cobertura/`.
+// The `analyzer` package will now primarily focus on the `MergeParserResults` logic.
+// If there are generic analysis utilities (like calculating overall method coverage percentages
+// from a `SummaryResult`), they can remain or be added here.

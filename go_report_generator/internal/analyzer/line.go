@@ -9,6 +9,7 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 // conditionCoverageRegex matches the (covered/total) part of Cobertura's condition-coverage attribute,
@@ -26,13 +27,13 @@ type lineProcessingMetrics struct {
 // sourceLines contains all lines from the source file this XML line belongs to.
 func processLineXML(lineXML inputxml.LineXML, sourceLines []string) (model.Line, lineProcessingMetrics) {
 	metrics := lineProcessingMetrics{}
-	lineNumber := parseInt(lineXML.Number) // Assuming parseInt is defined elsewhere (e.g., analyzer.go)
+	lineNumber := utils.ParseInt(lineXML.Number, 0) // Assuming parseInt is defined elsewhere (e.g., analyzer.go)
 
 	line := model.Line{
 		Number:            lineNumber,
-		Hits:              parseInt(lineXML.Hits),
+		Hits:              utils.ParseInt(lineXML.Hits, 0),
 		IsBranchPoint:     (lineXML.Branch == "true"),
-		ConditionCoverage: lineXML.ConditionCoverage, // Store original string
+		ConditionCoverage: lineXML.ConditionCoverage,             // Store original string
 		Branch:            make([]model.BranchCoverageDetail, 0), // Initialize as empty slice
 	}
 

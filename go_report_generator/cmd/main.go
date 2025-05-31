@@ -4,14 +4,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath" // New import
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/analyzer"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/glob" // New import
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/glob"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"             // Import the main parser package
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura" // Import for side-effect: registers CoberturaParser
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/htmlreport"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/textsummary"
@@ -19,6 +20,7 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
+// ... (validateReportTypes and supportedReportTypes remain the same) ...
 // supportedReportTypes defines the available report formats
 var supportedReportTypes = map[string]bool{
 	"TextSummary": true,
@@ -39,7 +41,6 @@ func validateReportTypes(types []string) error {
 func main() {
 	start := time.Now()
 
-	// Changed from -report to -reports to align with C# and common usage for multiple files/patterns
 	reportsPatternsStr := flag.String("report", "", "Coverage report file paths or patterns (semicolon-separated, e.g., \"./coverage/*.xml;./more.xml\")")
 	outputDir := flag.String("output", "coverage-report", "Output directory for reports")
 	reportTypesStr := flag.String("reporttypes", "TextSummary", "Report types to generate (comma-separated: TextSummary,Html)")
@@ -50,8 +51,8 @@ func main() {
 
 	flag.Parse()
 
+	// ... (CLI parsing and report file globbing remain mostly the same) ...
 	if *reportsPatternsStr == "" {
-		// Updated usage message
 		fmt.Println("Usage: go_report_generator -reports <file/pattern>[;<file/pattern>...] [-output <dir>] ...")
 		fmt.Println("\nReport types:")
 		for rt := range supportedReportTypes {
@@ -61,8 +62,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Expand report file patterns
-	reportFilePatterns := strings.Split(*reportsPatternsStr, ";") // Semicolon separated patterns
+	reportFilePatterns := strings.Split(*reportsPatternsStr, ";")
 	var actualReportFiles []string
 	var invalidPatterns []string
 	seenFiles := make(map[string]struct{})
@@ -79,8 +79,6 @@ func main() {
 			continue
 		}
 		if len(expandedFiles) == 0 {
-			// Only add to invalidPatterns if it wasn't an error but just found no files.
-			// C# ReportConfiguration stores these separately.
 			fmt.Fprintf(os.Stderr, "Warning: No files found for report pattern '%s'\n", trimmedPattern)
 			invalidPatterns = append(invalidPatterns, trimmedPattern)
 		}
@@ -92,7 +90,7 @@ func main() {
 					seenFiles[absFile] = struct{}{}
 				} else if err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: Could not stat file from pattern '%s': %s - %v\n", trimmedPattern, absFile, err)
-					invalidPatterns = append(invalidPatterns, file) // Add specific file that failed stat
+					invalidPatterns = append(invalidPatterns, file)
 				}
 			}
 		}
@@ -109,10 +107,6 @@ func main() {
 	requestedTypes := strings.Split(*reportTypesStr, ",")
 	if err := validateReportTypes(requestedTypes); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Println("\nSupported report types:")
-		for rt := range supportedReportTypes {
-			fmt.Printf("  %s\n", rt)
-		}
 		os.Exit(1)
 	}
 
@@ -125,6 +119,7 @@ func main() {
 	}
 
 	var verbosity logging.VerbosityLevel
+	// ... (verbosity parsing remains the same) ...
 	switch strings.ToLower(*verbosityStr) {
 	case "verbose":
 		verbosity = logging.Verbose
@@ -141,15 +136,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	currentSettings := settings.NewSettings()
+
+	currentSettings := settings.NewSettings() // Create settings instance
 	actualTitle := *title
 	if actualTitle == "" {
 		actualTitle = "Coverage Report"
 	}
 
-	// Pass the expanded actualReportFiles and any invalidPatterns to the configuration
-	reportConfig := reportconfig.NewReportConfiguration(
-		actualReportFiles, // Now a list of actual files
+    // Collect raw filter strings from CLI (or config file if you add that later)
+    // For now, assuming they are not yet CLI flags, so passing empty slices.
+    // If you add CLI flags for filters, parse them here.
+    assemblyFilterStrings := []string{} // Placeholder: populate from CLI flags if available
+    classFilterStrings := []string{}    // Placeholder
+    fileFilterStrings := []string{}     // Placeholder
+    rhAssemblyFilterStrings := []string{}// Placeholder
+    rhClassFilterStrings := []string{}  // Placeholder
+
+
+	reportConfig, err := reportconfig.NewReportConfiguration( // Updated call
+		actualReportFiles,
 		*outputDir,
 		sourceDirsList,
 		"", // historyDir
@@ -157,58 +162,87 @@ func main() {
 		*tag,
 		actualTitle,
 		verbosity,
-		invalidPatterns, // Pass invalid patterns
+		invalidPatterns,
+        assemblyFilterStrings,
+        classFilterStrings,
+        fileFilterStrings,
+        rhAssemblyFilterStrings,
+        rhClassFilterStrings,
+        currentSettings, // Pass settings
 	)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error creating report configuration: %v\n", err)
+        os.Exit(1)
+    }
 
+	// Create ReportContext once, after initial config and settings are ready.
 	reportCtx := reporting.NewReportContext(reportConfig, currentSettings)
 
-	// The rest of the logic will now iterate over `actualReportFiles` if multiple reports need to be merged.
-	// For now, assuming CoberturaParser and Analyzer handle one report at a time,
-	// or that a higher-level merge strategy is needed (like in C# ReportGenerator).
-	// This example will process the first valid report file for simplicity of demonstration.
-	// A full multi-report merge is a larger architectural change.
 
-	if len(actualReportFiles) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: No report files to process.\n")
-		os.Exit(1)
+	var parserResults []*parser.ParserResult
+	processedAllFilesSuccessfully := true
+
+	for _, reportFile := range actualReportFiles {
+		fmt.Printf("Attempting to parse report file: %s\n", reportFile)
+		parserInstance, err := parser.FindParserForFile(reportFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %v for file %s. Skipping.\n", err, reportFile)
+			processedAllFilesSuccessfully = false
+			continue
+		}
+
+		fmt.Printf("Using parser: %s for file %s\n", parserInstance.Name(), reportFile)
+		// Pass reportCtx to the parser's Parse method
+		result, err := parserInstance.Parse(reportFile, reportCtx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing file %s with %s: %v. Skipping.\n", reportFile, parserInstance.Name(), err)
+			processedAllFilesSuccessfully = false
+			continue
+		}
+		parserResults = append(parserResults, result)
+		fmt.Printf("Successfully parsed: %s\n", reportFile)
+
+		// Update reportConfig's source directories if new ones are found by the parser
+		// This part needs careful thought: if reportConfig is immutable or if this update is safe.
+		// For now, this assumes reportConfig's source dirs might be updated.
+		// A better approach might be to collect all source dirs from all parserResults
+		// and then update the single reportCtx or final SummaryResult.
+		currentConfig := reportCtx.ReportConfiguration()
+		if len(currentConfig.SourceDirectories()) == 0 && len(result.SourceDirectories) > 0 {
+			fmt.Printf("Note: Report '%s' specified source directories: %v. Updating configuration for context.\n", reportFile, result.SourceDirectories)
+			
+            // Re-create or update the config and then the context
+            // This is a bit clumsy; ideally, ReportConfiguration would be mutable or source dirs handled centrally.
+			updatedConfig, confErr := reportconfig.NewReportConfiguration(
+				actualReportFiles, *outputDir, result.SourceDirectories, "",
+				requestedTypes, *tag, actualTitle, verbosity, invalidPatterns,
+                assemblyFilterStrings, classFilterStrings, fileFilterStrings,
+                rhAssemblyFilterStrings, rhClassFilterStrings, currentSettings,
+			)
+            if confErr != nil {
+                 fmt.Fprintf(os.Stderr, "Error updating report configuration with new source dirs: %v\n", confErr)
+            } else {
+			    reportCtx = reporting.NewReportContext(updatedConfig, currentSettings) // Update the context for subsequent operations
+            }
+		}
 	}
 
-	// For now, process only the first report file found.
-	// TODO: Implement merging strategy for multiple report files.
-	fmt.Printf("Processing coverage report: %s\n", actualReportFiles[0])
-	rawReport, sourceDirsFromParser, err := parser.ParseCoberturaXML(actualReportFiles[0])
+	if len(parserResults) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: No coverage reports could be parsed successfully.\n")
+		os.Exit(1)
+	}
+	
+	fmt.Printf("Merging %d parsed report(s)...\n", len(parserResults))
+	// Pass reportCtx to MergeParserResults as well, it might need config/settings.
+	summaryResult, err := analyzer.MergeParserResults(parserResults, reportCtx.ReportConfiguration())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse Cobertura XML from %s: %v\n", actualReportFiles[0], err)
+		fmt.Fprintf(os.Stderr, "Failed to merge parser results: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Coverage data merged and analyzed.\n")
 
-	// Update reportConfig if sourceDirs came from parser and were not initially set
-	// This logic should be outside the loop if you process multiple files and merge configurations.
-	if len(reportConfig.SourceDirectories()) == 0 && len(sourceDirsFromParser) > 0 {
-		fmt.Printf("Note: Cobertura report specified source directories: %v. Using these as source directories.\n", sourceDirsFromParser)
-		reportConfig = reportconfig.NewReportConfiguration( // Recreate or update the config
-			actualReportFiles,
-			*outputDir,
-			sourceDirsFromParser,
-			"",
-			requestedTypes,
-			*tag,
-			actualTitle,
-			verbosity,
-			invalidPatterns,
-		)
-		// Update reportCtx as well if it's already been used with the old config
-		reportCtx = reporting.NewReportContext(reportConfig, currentSettings)
-	}
-
-	fmt.Printf("Cobertura XML parsed successfully.\n")
-	summaryResult, err := analyzer.Analyze(rawReport, reportConfig.SourceDirectories())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to analyze coverage data: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("Coverage data analyzed.\n")
-	fmt.Printf("Generating reports in: %s\n", *outputDir)
+	// ... (Report Generation part remains the same, using reportCtx where needed for HtmlReportBuilder) ...
+    fmt.Printf("Generating reports in: %s\n", *outputDir)
 	if err := os.MkdirAll(*outputDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
 		os.Exit(1)
@@ -223,11 +257,16 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Failed to generate text report: %v\n", err)
 			}
 		case "Html":
-			htmlBuilder := htmlreport.NewHtmlReportBuilder(*outputDir, reportCtx)
+			htmlBuilder := htmlreport.NewHtmlReportBuilder(*outputDir, reportCtx) 
 			if err := htmlBuilder.CreateReport(summaryResult); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to generate HTML report: %v\n", err)
 			}
 		}
 	}
+
+	if !processedAllFilesSuccessfully {
+		fmt.Println("\nWarning: Some report files could not be processed. See messages above.")
+	}
 	fmt.Printf("\nReport generation completed in %.2f seconds\n", time.Since(start).Seconds())
+
 }
