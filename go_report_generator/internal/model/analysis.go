@@ -57,27 +57,6 @@ const (
 	MethodElementType
 )
 
-type CodeElement struct {
-	Name          string
-	FullName      string // For uniqueness, e.g., with signature
-	Type          CodeElementType
-	FirstLine     int
-	LastLine      int
-	CoverageQuota *float64 // Nullable (percentage 0-100)
-}
-
-type Method struct {
-	Name          string
-	Signature     string
-	LineRate      float64 // Stored as 0-1.0
-	BranchRate    float64 // Stored as 0-1.0
-	Complexity    float64
-	Lines         []Line
-	FirstLine     int            // The line number where the method definition starts
-	LastLine      int            // The line number where the method definition ends
-	MethodMetrics []MethodMetric // Specific metrics for this method
-}
-
 // BranchCoverageDetail provides details about a specific branch on a line.
 type BranchCoverageDetail struct {
 	Identifier string // Unique identifier for the branch, e.g., "0", "1", "true", "false"
@@ -95,3 +74,39 @@ type Line struct {
 	TotalBranches            int            // Total number of branches on this line
 	LineCoverageByTestMethod map[string]int // Tracks hits for this line by TestMethod.ID
 }
+
+type CodeElement struct {
+	Name          string
+	FullName      string // For uniqueness, e.g., with signature
+	Type          CodeElementType
+	FirstLine     int
+	LastLine      int
+	CoverageQuota *float64 // Nullable (percentage 0-100)
+}
+
+// GetFirstLine implements utils.SortableByLineAndName for CodeElement
+func (ce CodeElement) GetFirstLine() int { return ce.FirstLine }
+
+// GetSortableName implements utils.SortableByLineAndName for CodeElement
+// For CodeElement, FullName is the cleaned full name, suitable for consistent sorting.
+func (ce CodeElement) GetSortableName() string { return ce.FullName }
+
+type Method struct {
+	Name          string
+	Signature     string
+	DisplayName   string  // Stores the cleaned full name (after ExtractMethodName)
+	LineRate      float64 // Stored as 0-1.0
+	BranchRate    float64 // Stored as 0-1.0
+	Complexity    float64
+	Lines         []Line
+	FirstLine     int            // The line number where the method definition starts
+	LastLine      int            // The line number where the method definition ends
+	MethodMetrics []MethodMetric // Specific metrics for this method
+}
+
+// GetFirstLine implements utils.SortableByLineAndName for Method
+func (m Method) GetFirstLine() int { return m.FirstLine }
+
+// GetSortableName implements utils.SortableByLineAndName for Method
+// For Method, DisplayName is the cleaned full name, suitable for consistent sorting.
+func (m Method) GetSortableName() string { return m.DisplayName }

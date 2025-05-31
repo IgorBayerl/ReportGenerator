@@ -234,13 +234,14 @@ type MetricsTableViewModel struct {
 
 // SidebarElementViewModel holds data for the "Methods/Properties" sidebar links
 type SidebarElementViewModel struct {
-	Name             string // Display name for the link
+	Name             string // Display name for the link (short, e.g., Method())
+	FullName         string // Full cleaned name (e.g., Namespace.MyClass.Method(Params)) for title
 	FileShortPath    string // Sanitized file path for href ID
 	FileIndexPlus1   int    // 1-based index of the file if class is multi-file
 	Line             int    // First line of the method/property
 	Icon             string // "cube" for method, "wrench" for property
 	CoverageBarValue int    // For percentagebar CSS (0-100 for uncovered part)
-	CoverageTitle    string // e.g., "Line coverage: 50%"
+	CoverageTitle    string // e.g., "Line coverage: 50% - Namespace.MyClass.Method(Params)"
 }
 
 // SummaryPageData is the top-level struct for the summaryPageLayoutTemplate

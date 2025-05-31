@@ -1,3 +1,4 @@
+// Path: internal/analyzer/codefile.go
 package analyzer
 
 import (
@@ -5,11 +6,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+
 	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 // fileProcessingMetrics holds metrics aggregated during the processing of a single <class> XML element's file fragment.
@@ -124,12 +127,12 @@ func processCodeFileFragment(
 
 		// 2. Create and add CodeElement to CodeFile's CodeElements list
 		elementType := model.MethodElementType
-		methodNameForPropertyCheck := methodModel.Name
-		if strings.HasPrefix(methodNameForPropertyCheck, "get_") || strings.HasPrefix(methodNameForPropertyCheck, "set_") {
+		// Use the cleaned DisplayName for property check and as base for CodeElement names
+		cleanedFullNameForElement := methodModel.DisplayName
+		if strings.HasPrefix(cleanedFullNameForElement, "get_") || strings.HasPrefix(cleanedFullNameForElement, "set_") {
 			elementType = model.PropertyElementType
 		}
 
-		// Calculate coverage quota for this specific CodeElement
 		var coverageQuotaForElement *float64
 		if len(methodModel.Lines) > 0 {
 			if !math.IsNaN(methodModel.LineRate) && !math.IsInf(methodModel.LineRate, 0) {
@@ -138,9 +141,18 @@ func processCodeFileFragment(
 			}
 		}
 
+		// Determine the short name for display in the CodeElement itself
+		var shortNameForElement string
+		if elementType == model.PropertyElementType {
+			// Properties usually don't have complex signatures that need shortening for CodeElement.Name
+			shortNameForElement = cleanedFullNameForElement
+		} else {
+			shortNameForElement = utils.GetShortMethodName(cleanedFullNameForElement)
+		}
+
 		codeElement := model.CodeElement{
-			Name:          methodModel.Name, // This is the short name from processMethodXML
-			FullName:      methodModel.Name + methodModel.Signature,
+			Name:          shortNameForElement,       // Use the shortened version of the cleaned name
+			FullName:      cleanedFullNameForElement, // Use the full cleaned name (e.g., MyMethod(System.String))
 			Type:          elementType,
 			FirstLine:     methodModel.FirstLine,
 			LastLine:      methodModel.LastLine,
@@ -148,6 +160,9 @@ func processCodeFileFragment(
 		}
 		codeFile.CodeElements = append(codeFile.CodeElements, codeElement)
 	}
+
+	// If CodeElements are structs, utils.SortByLineAndName(codeFile.CodeElements) is fine.
+	utils.SortByLineAndName(codeFile.CodeElements)
 
 	return &codeFile, metrics, nil
 }

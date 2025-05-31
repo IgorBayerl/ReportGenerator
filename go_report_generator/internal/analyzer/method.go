@@ -42,20 +42,12 @@ func extractMethodName(methodNamePlusSignature, classNameFromXML string) string 
 	// Handle .NET local functions (e.g., "ContainingClass.<ParentMethod>g__LocalFuncName|0_0(params)")
 	// The C# regex is more complex. This Go version tries to extract the core local function name.
 	if strings.Contains(methodNamePlusSignature, "|") && (strings.Contains(classNameFromXML, ">g__") || strings.Contains(methodNamePlusSignature, ">g__")) {
-		// Try to find: <Parent>g__LocalName|...
-		// We want "LocalName" + signature
 		match := localFunctionMethodNameRegex.FindStringSubmatch(combinedNameForContext)
-		// (?P<ParentMethodName>[^>]+)>g__)?(?P<NestedMethodName>[^|]+)\|
-		// Index 1: ParentMethodName (optional group)
-		// Index 2: NestedMethodName
-		if len(match) > localFunctionMethodNameRegex.SubexpIndex("NestedMethodName") {
-			nestedName := match[localFunctionMethodNameRegex.SubexpIndex("NestedMethodName")]
+		nameIndex := localFunctionMethodNameRegex.SubexpIndex("NestedMethodName")
+		if len(match) > nameIndex && match[nameIndex] != "" {
+			nestedName := match[nameIndex]
 			if nestedName != "" {
-				signatureIndex := strings.Index(methodNamePlusSignature, "(")
-				if signatureIndex != -1 {
-					return nestedName + methodNamePlusSignature[signatureIndex:]
-				}
-				return nestedName + "()" // Default if no signature found in original
+				return nestedName + "()" // ALWAYS append "()" for local functions
 			}
 		}
 	}
@@ -109,9 +101,10 @@ func processMethodXML(methodXML inputxml.MethodXML, sourceLines []string, classN
 	}
 
 	method := model.Method{
-		Name:       rawMethodName, // Store original name from XML for model.Method.Name
-		Signature:  rawSignature,  // Store original signature for model.Method.Signature
-		Complexity: parseFloat(methodXML.Complexity),
+		Name:        rawMethodName, // Store original name from XML for model.Method.Name
+		Signature:   rawSignature,  // Store original signature for model.Method.Signature
+		DisplayName: extractedFullNameForDisplay,
+		Complexity:  parseFloat(methodXML.Complexity),
 	}
 
 	processMethodLines(methodXML, &method, sourceLines)
