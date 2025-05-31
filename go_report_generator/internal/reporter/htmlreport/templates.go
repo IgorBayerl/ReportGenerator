@@ -220,12 +220,12 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
             <div class="table-responsive">
                 <table class="overview table-fixed">
                     <colgroup>
-                        <col class="column-min-200" /> <!-- For Method Name -->
+                        <col class="column-min-200" />
                         {{range .Class.MetricsTable.Headers}}
                         <col class="column105" />
                         {{end}}
                     </colgroup>
-                    <thead><tr><th>{{$.Translations.Method}}</th> <!-- Ensure "Method" is in translations -->
+                    <thead><tr><th>{{$.Translations.Methods}}</th>
                         {{range .Class.MetricsTable.Headers}}
                         <th>{{.Name}} {{if .ExplanationURL}}<a href="{{.ExplanationURL}}" target="_blank"><i class="icon-info-circled"></i></a>{{end}}</th>
                         {{end}}
