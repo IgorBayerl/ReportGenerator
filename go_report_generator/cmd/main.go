@@ -20,7 +20,6 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
-// ... (validateReportTypes and supportedReportTypes remain the same) ...
 // supportedReportTypes defines the available report formats
 var supportedReportTypes = map[string]bool{
 	"TextSummary": true,
@@ -241,7 +240,6 @@ func main() {
 	}
 	fmt.Printf("Coverage data merged and analyzed.\n")
 
-	// ... (Report Generation part remains the same, using reportCtx where needed for HtmlReportBuilder) ...
     fmt.Printf("Generating reports in: %s\n", *outputDir)
 	if err := os.MkdirAll(*outputDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
