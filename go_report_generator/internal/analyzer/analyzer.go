@@ -87,7 +87,6 @@ func parseFloat(s string) float64 {
 	return v
 }
 
-
 // isValidUnixSeconds checks if a timestamp (in seconds) is within a reasonable range.
 // E.g., between 1975-01-01 and 2100-01-01.
 func isValidUnixSeconds(ts int64) bool {

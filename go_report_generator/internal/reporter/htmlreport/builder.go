@@ -129,10 +129,6 @@ func (b *HtmlReportBuilder) initializeBuilderProperties(report *model.SummaryRes
 
 }
 
-
-
-
-
 func (b *HtmlReportBuilder) renderSummaryPage(data SummaryPageData) error {
 	outputIndexPath := filepath.Join(b.OutputDir, "index.html")
 	summaryFile, err := os.Create(outputIndexPath)
@@ -215,7 +211,3 @@ func (b *HtmlReportBuilder) renderClassDetailPage(data ClassDetailData, classRep
 	defer fileWriter.Close()
 	return classDetailTpl.Execute(fileWriter, data)
 }
-
-
-
-

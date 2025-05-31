@@ -71,7 +71,7 @@ func TestGenerateUniqueFilename(t *testing.T) {
 			assemblyShortName: "MyAssembly",
 			className:         "MyClass",
 			existingFilenames: map[string]struct{}{
-				"myassemblymyclass.html":   {},
+				"myassemblymyclass.html":  {},
 				"myassemblymyclass2.html": {},
 			},
 			want:              "MyAssemblyMyClass3.html",

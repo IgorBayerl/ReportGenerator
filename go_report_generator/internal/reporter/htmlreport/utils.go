@@ -41,8 +41,6 @@ func countUniqueFiles(assemblies []model.Assembly) int {
 	return len(uniqueFiles)
 }
 
-
-
 func (b *HtmlReportBuilder) getClassReportFilename(assemblyShortName, className string, existingFilenames map[string]struct{}) string {
 	processedClassName := className
 	if lastDot := strings.LastIndex(className, "."); lastDot != -1 {
@@ -74,9 +72,6 @@ func (b *HtmlReportBuilder) getClassReportFilename(assemblyShortName, className 
 	existingFilenames[normalizedFileNameToCheck] = struct{}{}
 	return fileName
 }
-
-
-
 
 // --- Helper functions for determining line status and simple counts ---
 func determineLineVisitStatus(hits int, isBranchPoint bool, coveredBranches int, totalBranches int) int {
@@ -114,7 +109,6 @@ func lineVisitStatusToString(status int) string {
 	}
 }
 
-
 // generateUniqueFilename creates a sanitized and unique HTML filename for a class.
 // It takes assembly and class names, and a map of existing filenames to ensure uniqueness.
 // The existingFilenames map is modified by this function.
@@ -132,32 +126,31 @@ func generateUniqueFilename( // Renamed to lowercase
 	// 2. Handle specific ".js" suffix if it's the entirety of namePart
 	processedClassName := namePart
 	if strings.ToLower(namePart) == "js" && strings.HasSuffix(strings.ToLower(className), ".js") {
-	    // This case handles "Namespace.js" -> "" or "js.js" -> "js"
-        // If the original full class name ended with ".js" AND the part after the last dot is just "js",
-        // then we effectively treat the class name part as empty or strip the .js from the segment.
-        // Let's be more direct: if namePart is "js", just use it.
-        // The original C# logic might be more nuanced for specific tools that output ".js" classes.
-        // For "MyClass.js" -> namePart is "MyClass.js".
-        // For "MyNamespace.MyClass.js" -> namePart is "MyClass.js".
-        if strings.HasSuffix(strings.ToLower(namePart), ".js") {
-             processedClassName = namePart[:len(namePart)-3]
-        }
+		// This case handles "Namespace.js" -> "" or "js.js" -> "js"
+		// If the original full class name ended with ".js" AND the part after the last dot is just "js",
+		// then we effectively treat the class name part as empty or strip the .js from the segment.
+		// Let's be more direct: if namePart is "js", just use it.
+		// The original C# logic might be more nuanced for specific tools that output ".js" classes.
+		// For "MyClass.js" -> namePart is "MyClass.js".
+		// For "MyNamespace.MyClass.js" -> namePart is "MyClass.js".
+		if strings.HasSuffix(strings.ToLower(namePart), ".js") {
+			processedClassName = namePart[:len(namePart)-3]
+		}
 
 	} else if strings.HasSuffix(strings.ToLower(namePart), ".js") {
-        // General case: if namePart ends with .js (e.g. "SomeFile.js"), strip it.
+		// General case: if namePart ends with .js (e.g. "SomeFile.js"), strip it.
 		processedClassName = namePart[:len(namePart)-3]
 	}
 
-
 	// 3. Further simplify processedClassName by taking the segment after common C# nested type separators
-    // This helps with "SomeClass::Sub/Inner" -> "Inner"
-    separators := []string{"+", "/", "::"} // Order might matter if they can be combined
-    for _, sep := range separators {
-        if strings.Contains(processedClassName, sep) {
-            parts := strings.Split(processedClassName, sep)
-            processedClassName = parts[len(parts)-1]
-        }
-    }
+	// This helps with "SomeClass::Sub/Inner" -> "Inner"
+	separators := []string{"+", "/", "::"} // Order might matter if they can be combined
+	for _, sep := range separators {
+		if strings.Contains(processedClassName, sep) {
+			parts := strings.Split(processedClassName, sep)
+			processedClassName = parts[len(parts)-1]
+		}
+	}
 
 	baseName := assemblyShortName + processedClassName
 	sanitizedName := sanitizeFilenameChars.ReplaceAllString(baseName, "")

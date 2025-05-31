@@ -27,43 +27,47 @@ type IReportConfiguration interface {
 // ReportConfiguration is a concrete implementation of IReportConfiguration.
 // Corresponds to C#'s ReportGenerator.Core.ReportConfiguration
 type ReportConfiguration struct {
-	RFiles                       []string
-	TDirectory                   string
-	SDirectories                 []string
-	HDirectory                   string
-	RTypes                       []string
-	PluginsList                  []string
-	AssemblyFilterList           []string
-	ClassFilterList              []string
-	FileFilterList               []string
+	RFiles                        []string
+	TDirectory                    string
+	SDirectories                  []string
+	HDirectory                    string
+	RTypes                        []string
+	PluginsList                   []string
+	AssemblyFilterList            []string
+	ClassFilterList               []string
+	FileFilterList                []string
 	RiskHotspotAssemblyFilterList []string
 	RiskHotspotClassFilterList    []string
-	VLevel                       logging.VerbosityLevel
-	CfgTag                       string
-	CfgTitle                     string
-	CfgLicense                   string
-	InvalidPatterns              []string
-	VLevelValid                  bool
+	VLevel                        logging.VerbosityLevel
+	CfgTag                        string
+	CfgTitle                      string
+	CfgLicense                    string
+	InvalidPatterns               []string
+	VLevelValid                   bool
 }
 
 // Implement IReportConfiguration methods
-func (rc *ReportConfiguration) ReportFiles() []string                         { return rc.RFiles }
-func (rc *ReportConfiguration) TargetDirectory() string                     { return rc.TDirectory }
-func (rc *ReportConfiguration) SourceDirectories() []string                 { return rc.SDirectories }
-func (rc *ReportConfiguration) HistoryDirectory() string                    { return rc.HDirectory }
-func (rc *ReportConfiguration) ReportTypes() []string                       { return rc.RTypes }
-func (rc *ReportConfiguration) Plugins() []string                           { return rc.PluginsList }
-func (rc *ReportConfiguration) AssemblyFilters() []string                   { return rc.AssemblyFilterList }
-func (rc *ReportConfiguration) ClassFilters() []string                      { return rc.ClassFilterList }
-func (rc *ReportConfiguration) FileFilters() []string                       { return rc.FileFilterList }
-func (rc *ReportConfiguration) RiskHotspotAssemblyFilters() []string        { return rc.RiskHotspotAssemblyFilterList }
-func (rc *ReportConfiguration) RiskHotspotClassFilters() []string           { return rc.RiskHotspotClassFilterList }
-func (rc *ReportConfiguration) VerbosityLevel() logging.VerbosityLevel      { return rc.VLevel }
-func (rc *ReportConfiguration) Tag() string                                 { return rc.CfgTag }
-func (rc *ReportConfiguration) Title() string                               { return rc.CfgTitle }
-func (rc *ReportConfiguration) License() string                             { return rc.CfgLicense }
-func (rc *ReportConfiguration) InvalidReportFilePatterns() []string         { return rc.InvalidPatterns }
-func (rc *ReportConfiguration) IsVerbosityLevelValid() bool                 { return rc.VLevelValid }
+func (rc *ReportConfiguration) ReportFiles() []string       { return rc.RFiles }
+func (rc *ReportConfiguration) TargetDirectory() string     { return rc.TDirectory }
+func (rc *ReportConfiguration) SourceDirectories() []string { return rc.SDirectories }
+func (rc *ReportConfiguration) HistoryDirectory() string    { return rc.HDirectory }
+func (rc *ReportConfiguration) ReportTypes() []string       { return rc.RTypes }
+func (rc *ReportConfiguration) Plugins() []string           { return rc.PluginsList }
+func (rc *ReportConfiguration) AssemblyFilters() []string   { return rc.AssemblyFilterList }
+func (rc *ReportConfiguration) ClassFilters() []string      { return rc.ClassFilterList }
+func (rc *ReportConfiguration) FileFilters() []string       { return rc.FileFilterList }
+func (rc *ReportConfiguration) RiskHotspotAssemblyFilters() []string {
+	return rc.RiskHotspotAssemblyFilterList
+}
+func (rc *ReportConfiguration) RiskHotspotClassFilters() []string {
+	return rc.RiskHotspotClassFilterList
+}
+func (rc *ReportConfiguration) VerbosityLevel() logging.VerbosityLevel { return rc.VLevel }
+func (rc *ReportConfiguration) Tag() string                            { return rc.CfgTag }
+func (rc *ReportConfiguration) Title() string                          { return rc.CfgTitle }
+func (rc *ReportConfiguration) License() string                        { return rc.CfgLicense }
+func (rc *ReportConfiguration) InvalidReportFilePatterns() []string    { return rc.InvalidPatterns }
+func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return rc.VLevelValid }
 
 // NewReportConfiguration is a constructor for ReportConfiguration.
 // You'll need to adapt how this is created from your command-line flags (cmd/main.go)
@@ -82,15 +86,15 @@ func NewReportConfiguration(
 		reportTypes = []string{"Html"} // Default
 	}
 	return &ReportConfiguration{
-		RFiles:      reportFiles,
-		TDirectory:  targetDir,
+		RFiles:       reportFiles,
+		TDirectory:   targetDir,
 		SDirectories: sourceDirs,
-		HDirectory:  historyDir,
-		RTypes:      reportTypes,
-		CfgTag:      tag,
-		CfgTitle:    title,
-		VLevel:      verbosity,
-		VLevelValid: true, // Assume valid for now, add validation if needed
+		HDirectory:   historyDir,
+		RTypes:       reportTypes,
+		CfgTag:       tag,
+		CfgTitle:     title,
+		VLevel:       verbosity,
+		VLevelValid:  true, // Assume valid for now, add validation if needed
 		// Initialize filter lists as empty slices:
 		AssemblyFilterList:            []string{},
 		ClassFilterList:               []string{},

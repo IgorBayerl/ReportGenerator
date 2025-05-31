@@ -76,7 +76,7 @@ func main() {
 			sourceDirsList[i] = strings.TrimSpace(dir)
 		}
 	}
-	
+
 	// Parse verbosity level
 	var verbosity logging.VerbosityLevel
 	switch strings.ToLower(*verbosityStr) {

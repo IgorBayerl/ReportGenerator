@@ -20,8 +20,8 @@ type IReportContext interface {
 // ReportContext is a concrete implementation of IReportContext.
 // Corresponds to C#'s ReportGenerator.Core.ReportContext
 type ReportContext struct {
-	Cfg      reportconfig.IReportConfiguration
-	Stngs    *settings.Settings
+	Cfg   reportconfig.IReportConfiguration
+	Stngs *settings.Settings
 	// RiskHotspots *RiskHotspotAnalysisResult
 	// Historic     []model.HistoricCoverage
 }
@@ -29,9 +29,9 @@ type ReportContext struct {
 // Implement IReportContext methods
 func (rc *ReportContext) ReportConfiguration() reportconfig.IReportConfiguration { return rc.Cfg }
 func (rc *ReportContext) Settings() *settings.Settings                           { return rc.Stngs }
+
 // func (rc *ReportContext) RiskHotspotAnalysisResult() *RiskHotspotAnalysisResult { return rc.RiskHotspots }
 // func (rc *ReportContext) OverallHistoricCoverages() []model.HistoricCoverage    { return rc.Historic }
-
 
 // NewReportContext creates a new ReportContext.
 func NewReportContext(config reportconfig.IReportConfiguration, settings *settings.Settings) *ReportContext {

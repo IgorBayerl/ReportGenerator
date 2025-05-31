@@ -33,9 +33,9 @@ type Class struct {
 	BranchesCovered     *int // Pointer
 	BranchesValid       *int // Pointer
 	TotalLines          int
-	CoveredMethods      int                
-	FullyCoveredMethods int                
-	TotalMethods        int                
+	CoveredMethods      int
+	FullyCoveredMethods int
+	TotalMethods        int
 	Metrics             map[string]float64 // Aggregated metrics (e.g., sum of complexities)
 	HistoricCoverages   []HistoricCoverage // Historical coverage data for this class
 }

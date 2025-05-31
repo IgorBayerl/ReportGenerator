@@ -95,9 +95,6 @@ func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model
 
 }
 
-
-
-
 func (b *HtmlReportBuilder) populateLineCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
 	if cvm.CoverableLines > 0 {
 		lineCoverage := (float64(cvm.CoveredLines) / float64(cvm.CoverableLines)) * 100.0
@@ -265,7 +262,6 @@ func (b *HtmlReportBuilder) buildSidebarElementViewModel(codeElem *model.CodeEle
 	return sidebarElem
 }
 
-
 // getStandardMetricHeaders defines the order and names of metrics for the table.
 func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinitionViewModel {
 	standardMetricKeys := []string{ // Use non-translated keys here for logic
@@ -288,7 +284,6 @@ func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinition
 	}
 	return headers
 }
-
 
 // findCorrespondingCodeElement links a model.Method to its model.CodeElement.
 // This is crucial for getting display names, proper links, and coverage quotas.
@@ -343,7 +338,6 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 			// or try to be smarter. For now, this is a common case.
 		}
 
-
 		fullNameForTitle = correspondingCE.FullName // This should be the most complete name
 		lineToLink = correspondingCE.FirstLine
 		isProperty = (correspondingCE.Type == model.PropertyElementType)
@@ -382,10 +376,14 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 		var originalMetricKey string
 		// Simplified reverse lookup for known standard keys (assuming Option A for viewmodel is not yet implemented)
 		switch headerVM.Name {
-		case b.translations["Branch coverage"]: originalMetricKey = "Branch coverage"
-		case b.translations["CrapScore"]: originalMetricKey = "CrapScore"
-		case b.translations["Cyclomatic complexity"]: originalMetricKey = "Cyclomatic complexity"
-		case b.translations["Line coverage"]: originalMetricKey = "Line coverage"
+		case b.translations["Branch coverage"]:
+			originalMetricKey = "Branch coverage"
+		case b.translations["CrapScore"]:
+			originalMetricKey = "CrapScore"
+		case b.translations["Cyclomatic complexity"]:
+			originalMetricKey = "Cyclomatic complexity"
+		case b.translations["Line coverage"]:
+			originalMetricKey = "Line coverage"
 		default: // Fallback if not one of the standard translated ones, or translation matches key
 			originalMetricKey = headerVM.Name // This assumes headerVM.Name is the key if not found in above cases
 			// A more robust reverse lookup might still be needed if translations are complex
@@ -399,7 +397,6 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 				}
 			}
 		}
-
 
 		if metric, ok := methodMetricsMap[originalMetricKey]; ok {
 			row.MetricValues[i] = b.formatMetricValue(metric)
@@ -415,7 +412,6 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 	}
 	return row
 }
-
 
 func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class, _ []*model.MethodMetric) MetricsTableViewModel {
 	metricsTable := MetricsTableViewModel{}
@@ -442,17 +438,13 @@ func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class,
 			// If CE is not found, it might affect linking and precise display name,
 			// but we still want to show the metrics for the method.
 		}
-		
+
 		row := b.buildSingleMetricRow(&method, correspondingCE, fileShortPath, fileIndexPlus1, metricsTable.Headers)
 		metricsTable.Rows = append(metricsTable.Rows, row)
 	}
 
 	return metricsTable
 }
-
-
-
-
 
 // getMetricExplanationURL (ensure keys match those in getStandardMetricHeaders)
 func (b *HtmlReportBuilder) getMetricExplanationURL(metricKey string) string {
@@ -467,8 +459,6 @@ func (b *HtmlReportBuilder) getMetricExplanationURL(metricKey string) string {
 		return ""
 	}
 }
-
-
 
 // formatMetricValue (ensure metric.Name matches the keys used in method.MethodMetrics)
 func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
@@ -506,8 +496,6 @@ func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 		return fmt.Sprintf(formatString, valFloat)
 	}
 }
-
-
 
 func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class, classVMServer *ClassViewModelForDetail) (AngularClassDetailViewModel, error) {
 	// Basic class info from server view model or re-calculate if necessary
@@ -549,8 +537,6 @@ func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class
 	return detailVM, nil
 
 }
-
-
 
 func (b *HtmlReportBuilder) buildAngularFileViewModelForJS(fileInClass *model.CodeFile) (AngularCodeFileViewModel, error) {
 	angularFile := AngularCodeFileViewModel{
@@ -601,9 +587,6 @@ func (b *HtmlReportBuilder) buildAngularLineViewModelForJS(content string, actua
 	}
 	return lineVM
 }
-
-
-
 
 func (b *HtmlReportBuilder) buildClassDetailPageData(classVM ClassViewModelForDetail, tag string, classDetailJS template.JS) ClassDetailData {
 	appVersion := "0.0.1" // Placeholder, same as summary
