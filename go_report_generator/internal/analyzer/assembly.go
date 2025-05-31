@@ -15,9 +15,9 @@ func processPackageXML(pkgXML inputxml.PackageXML, sourceDirs []string, uniqueFi
 	assemblyProcessedFilePaths := make(map[string]struct{})
 
 	classesXMLGrouped := make(map[string][]inputxml.ClassXML)
-	for _, clsXML := range pkgXML.Classes.Class {
-		logicalName := logicalClassName(clsXML.Name)
-		classesXMLGrouped[logicalName] = append(classesXMLGrouped[logicalName], clsXML)
+	for _, classXML := range pkgXML.Classes.Class {
+		logicalName := logicalClassName(classXML.Name)
+		classesXMLGrouped[logicalName] = append(classesXMLGrouped[logicalName], classXML)
 	}
 
 	for logicalName, classXMLGroup := range classesXMLGrouped {

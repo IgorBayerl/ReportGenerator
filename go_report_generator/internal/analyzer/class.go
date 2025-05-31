@@ -130,15 +130,15 @@ func processClassGroup(
 	var totalClassBranchesCovered, totalClassBranchesValid int
 	hasClassBranchData := false
 
-	for _, clsXML := range classXMLs {
-		if clsXML.Filename == "" {
+	for _, classXML := range classXMLs {
+		if classXML.Filename == "" {
 			continue
 		}
 
-		codeFile, fragmentMetrics, err := processCodeFileFragment(clsXML, sourceDirs, uniqueFilePathsForGrandTotalLines)
+		codeFile, fragmentMetrics, err := processCodeFileFragment(classXML, sourceDirs, uniqueFilePathsForGrandTotalLines)
 		if err != nil {
 			// Log error or handle as appropriate
-			fmt.Fprintf(os.Stderr, "Warning: could not process code file fragment for %s: %v\n", clsXML.Filename, err)
+			fmt.Fprintf(os.Stderr, "Warning: could not process code file fragment for %s: %v\n", classXML.Filename, err)
 			continue
 		}
 		if codeFile != nil {
@@ -178,33 +178,33 @@ func processClassGroup(
 			totalClassBranchesValid += fragmentMetrics.branchesValid
 		}
 
-		// Read source file content for the current class fragment (clsXML.Filename)
+		// Read source file content for the current class fragment (classXML.Filename)
 		var classFragmentSourceLines []string
-		if clsXML.Filename != "" { // Only attempt if filename is present
-			resolvedPath, findErr := findFileInSourceDirs(clsXML.Filename, sourceDirs)
+		if classXML.Filename != "" { // Only attempt if filename is present
+			resolvedPath, findErr := findFileInSourceDirs(classXML.Filename, sourceDirs)
 			if findErr == nil {
 				sLines, readErr := filereader.ReadLinesInFile(resolvedPath)
 				if readErr == nil {
 					classFragmentSourceLines = sLines
 				} else {
-					fmt.Fprintf(os.Stderr, "Warning: could not read content of source file %s for class %s: %v\n", resolvedPath, clsXML.Name, readErr)
+					fmt.Fprintf(os.Stderr, "Warning: could not read content of source file %s for class %s: %v\n", resolvedPath, classXML.Name, readErr)
 					classFragmentSourceLines = []string{}
 				}
 			} else {
 				// This warning might be redundant if processCodeFileFragment already warned.
-				// However, methods for this clsXML won't get source lines if the file isn't found here.
-				fmt.Fprintf(os.Stderr, "Warning: source file %s for class %s not found when preparing for method processing: %v\n", clsXML.Filename, clsXML.Name, findErr)
+				// However, methods for this classXML won't get source lines if the file isn't found here.
+				fmt.Fprintf(os.Stderr, "Warning: source file %s for class %s not found when preparing for method processing: %v\n", classXML.Filename, classXML.Name, findErr)
 				classFragmentSourceLines = []string{}
 			}
 		} else {
 			classFragmentSourceLines = []string{} // Ensure it's empty if no filename
 		}
 
-		for _, methodXML := range clsXML.Methods.Method {
-			method, err := processMethodXML(methodXML, classFragmentSourceLines) // Pass classFragmentSourceLines
+		for _, methodXML := range classXML.Methods.Method {
+			method, err := processMethodXML(methodXML, classFragmentSourceLines, classXML.Name) // Pass classFragmentSourceLines
 			if err != nil {
 				// Consider logging this error or handling it more explicitly
-				fmt.Fprintf(os.Stderr, "Warning: error processing method %s in class %s: %v\n", methodXML.Name, clsXML.Name, err)
+				fmt.Fprintf(os.Stderr, "Warning: error processing method %s in class %s: %v\n", methodXML.Name, classXML.Name, err)
 				continue
 			}
 			classModel.Methods = append(classModel.Methods, *method)

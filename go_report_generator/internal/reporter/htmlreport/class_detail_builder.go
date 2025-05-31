@@ -322,42 +322,47 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 	var isProperty bool
 	var coverageQuota *float64
 
+	// Construct the full name first, which might be from CodeElement or model.Method
 	if correspondingCE != nil {
-		// Use CodeElement's Name for display, which is typically the method name without full signature.
-		// The original report seems to use the CodeElement's name and then appends the signature
-		// if the signature is not "()" and not already part of the CodeElement's name.
-		displayName = correspondingCE.Name
-		if method.Signature != "" && method.Signature != "()" {
-			// Check if signature is already somewhat represented in displayName
-			// This is tricky because ce.Name might be "MyMethod" or "MyMethod()"
-			// and method.Signature might be "(System.String)"
-			if !strings.Contains(displayName, "(") { // If no parens in ce.Name, append full signature
-				displayName += method.Signature
-			} else if strings.HasSuffix(displayName, "()") { // If ce.Name is "MyMethod()", replace "()" with actual signature
-				displayName = strings.TrimSuffix(displayName, "()") + method.Signature
-			}
-			// If ce.Name already contains a signature-like part, we might leave it,
-			// or try to be smarter. For now, this is a common case.
+		fullNameForTitle = correspondingCE.FullName // This should be the most complete unique name
+		displayName = correspondingCE.Name          // Base name from CodeElement
+		if method.Signature != "" && !strings.Contains(displayName, "(") {
+			// If CE.Name is "MyMethod" and signature is "(params)", make displayName "MyMethod(params)"
+			displayName += method.Signature
+		} else if method.Signature == "" && !strings.Contains(displayName, "(") && correspondingCE.Type == model.MethodElementType {
+			// If no signature and CE.Name has no parens, and it's a method, add "()"
+			displayName += "()"
 		}
 
-		fullNameForTitle = correspondingCE.FullName // This should be the most complete name
 		lineToLink = correspondingCE.FirstLine
 		isProperty = (correspondingCE.Type == model.PropertyElementType)
 		coverageQuota = correspondingCE.CoverageQuota
 	} else {
 		// Fallback if CodeElement wasn't found
-		displayName = method.Name // Raw XML name
-		if method.Signature != "" && method.Signature != "()" {
+		fullNameForTitle = method.Name + method.Signature
+		displayName = method.Name // Raw XML name from method model
+		if method.Signature != "" {
 			displayName += method.Signature
+		} else if !strings.HasPrefix(displayName, "get_") && !strings.HasPrefix(displayName, "set_") {
+			displayName += "()"
 		}
-		fullNameForTitle = displayName // Best guess for full name
 		lineToLink = method.FirstLine
 		isProperty = strings.HasPrefix(method.Name, "get_") || strings.HasPrefix(method.Name, "set_")
 	}
 
+	// Now, generate the short display name using the new utility function
+	// Pass the more complete 'displayName' (which includes the signature) to GetShortMethodName
+	// if the signature is simple, it will keep it as `()`, otherwise `(...)`
+	var shortDisplayNameForTable string
+	if isProperty {
+		shortDisplayNameForTable = displayName // Properties usually don't simplify signature
+	} else {
+		shortDisplayNameForTable = utils.GetShortMethodName(displayName) // Use the new function
+	}
+
 	row := AngularMethodMetricsViewModel{
-		Name:           displayName,
-		FullName:       fullNameForTitle,
+		Name:           shortDisplayNameForTable, // Use the "short" version for table display
+		FullName:       fullNameForTitle,         // Use the fuller version for tooltips
 		FileIndexPlus1: fileIndexPlus1,
 		Line:           lineToLink,
 		FileShortPath:  fileShortPath,

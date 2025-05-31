@@ -120,3 +120,33 @@ func ReplaceInvalidPathChars(path string) string {
 func ReplaceNonLetterChars(text string) string {
 	return nonLetterCharsRegex.ReplaceAllString(text, "")
 }
+
+// getShortMethodName creates a shorter, display-friendly version of a full method name.
+// It replaces complex signatures with "()" or "(...)".
+// E.g., "MyMethod(System.String, System.Int32)" becomes "MyMethod(...)".
+// E.g., "MyMethod()" remains "MyMethod()".
+// E.g., "MyMethod" becomes "MyMethod" (if no parentheses were present).
+func GetShortMethodName(fullName string) string {
+	indexOpen := strings.Index(fullName, "(")
+
+	if indexOpen <= 0 { // No opening parenthesis or it's the first character (unlikely for valid method names)
+		return fullName
+	}
+
+	// Find the matching closing parenthesis. This is a simplification and assumes no nested parentheses in the signature part itself.
+	// For more complex scenarios (e.g. generic types with angle brackets in signature), this might need refinement.
+	indexClose := strings.Index(fullName[indexOpen:], ")")
+	if indexClose == -1 { // No closing parenthesis found after open
+		return fullName // Or perhaps append "()" if it's clearly a method name missing them
+	}
+	indexClose += indexOpen // Adjust indexClose to be relative to the start of fullName
+
+	var signature string
+	if indexClose > indexOpen+1 { // Signature is not just "()"
+		signature = "(...)"
+	} else { // Signature is "()"
+		signature = "()"
+	}
+
+	return fullName[:indexOpen] + signature
+}

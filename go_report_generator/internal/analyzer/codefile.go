@@ -111,7 +111,7 @@ func processCodeFileFragment(
 
 	// Populate MethodMetrics and CodeElements for the CodeFile
 	for _, methodXML := range classXML.Methods.Method {
-		methodModel, mErr := processMethodXML(methodXML, sourceLines)
+		methodModel, mErr := processMethodXML(methodXML, sourceLines, classXML.Name)
 		if mErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: error processing method %s for file %s: %v\n", methodXML.Name, classXML.Filename, mErr)
 			continue
