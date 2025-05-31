@@ -500,7 +500,6 @@ func (cp *CoberturaParser) processCoberturaLineXML(lineXML inputxml.LineXML, sou
 	return line, metrics
 }
 
-
 func (cp *CoberturaParser) setFallbackBranchDataCobertura(line *model.Line) {
 	if line.Hits > 0 {
 		line.CoveredBranches = 1
@@ -577,9 +576,11 @@ func (cp *CoberturaParser) processMethodLinesCobertura(methodXML inputxml.Method
 	if methodLinesValid > 0 {
 		method.LineRate = float64(methodLinesCovered) / float64(methodLinesValid)
 	}
-	method.BranchRate = 0.0
 	if methodBranchesValid > 0 {
+		// If there are valid branches, calculate the rate normally.
 		method.BranchRate = float64(methodBranchesCovered) / float64(methodBranchesValid)
+	} else {
+		method.BranchRate = 1.0
 	}
 }
 
