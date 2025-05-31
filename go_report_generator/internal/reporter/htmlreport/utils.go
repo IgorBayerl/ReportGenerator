@@ -73,7 +73,6 @@ func (b *HtmlReportBuilder) getClassReportFilename(assemblyShortName, className 
 	return fileName
 }
 
-// --- Helper functions for determining line status and simple counts ---
 func determineLineVisitStatus(hits int, isBranchPoint bool, coveredBranches int, totalBranches int) int {
 	if hits < 0 {
 		return lineVisitStatusNotCoverable

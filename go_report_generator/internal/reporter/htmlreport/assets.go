@@ -17,9 +17,11 @@ var (
 	angularDistSourcePath = filepath.Join(utils.ProjectRoot(), "angular_frontend_spa", "dist")
 )
 
-// initializeAssets handles all aspects of asset setup and copying
+// initializeAssets initializes and sets up all required assets for the HTML report.
+// It copies static and Angular assets to the output directory and parses the Angular
+// index.html to extract critical CSS and JavaScript file references.
+// Returns an error if any critical operation fails.
 func (b *HtmlReportBuilder) initializeAssets() error {
-	// These copy functions might succeed
 	if err := b.copyStaticAssets(); err != nil {
 		return fmt.Errorf("failed to copy static assets: %w", err)
 	}
@@ -27,35 +29,34 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 		return fmt.Errorf("failed to copy angular assets: %w", err)
 	}
 
-	// The problem is likely here:
 	angularIndexHTMLPath := filepath.Join(angularDistSourcePath, "index.html")
 	cssFile, runtimeJs, polyfillsJs, mainJs, err := b.parseAngularIndexHTML(angularIndexHTMLPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse Angular index.html: %w", err)
 	}
 
-	// This check is what's triggering your error message:
 	if cssFile == "" || runtimeJs == "" || mainJs == "" {
 		fmt.Fprintf(os.Stderr, "Warning: One or more Angular assets might be missing (css: %s, runtime: %s, polyfills: %s, main: %s)\n", cssFile, runtimeJs, polyfillsJs, mainJs)
-		if cssFile == "" || runtimeJs == "" || mainJs == "" { // Check critical ones
+		if cssFile == "" || runtimeJs == "" || mainJs == "" {
 			return fmt.Errorf("missing critical Angular assets from index.html (css: '%s', runtime: '%s', main: '%s')", cssFile, runtimeJs, mainJs)
 		}
 	}
+
 	b.angularCssFile = cssFile
 	b.angularRuntimeJsFile = runtimeJs
-	b.angularPolyfillsJsFile = polyfillsJs // Note: polyfillsJs can be empty if not used by Angular build
+	b.angularPolyfillsJsFile = polyfillsJs
 	b.angularMainJsFile = mainJs
 	return nil
 }
 
-// copyStaticAssets copies static assets (like custom.css, report.css, custom.js)
-// from the embedded/source assets directory to the report's output directory.
+// copyStaticAssets copies static asset files from the embedded/source assets directory
+// to the report's output directory. It handles CSS, JavaScript, and other static files
+// required by the HTML reports. It also combines custom CSS files into a single report.css.
+// Returns an error if any critical file operation fails.
 func (b *HtmlReportBuilder) copyStaticAssets() error {
-	// Files directly in assetsDir that are not part of the Angular build but are needed by the non-Angular HTML reports.
-	// This list usually includes the base report.css (if not fully replaced by Angular's) and any custom JS/CSS.
 	filesToCopy := []string{
-		"custom.css", // Example custom CSS for non-Angular parts
-		"custom.js",  // Example custom JS for non-Angular parts
+		"custom.css",
+		"custom.js",
 		"chartist.min.css",
 		"chartist.min.js", 
 		"custom-azurepipelines.css",
@@ -67,7 +68,7 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 	}
 
 	for _, fileName := range filesToCopy {
-		srcPath := filepath.Join(assetsDir, fileName) // assetsDir is your 'assets/htmlreport'
+		srcPath := filepath.Join(assetsDir, fileName)
 		dstPath := filepath.Join(b.OutputDir, fileName)
 
 		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
@@ -76,10 +77,8 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 
 		srcFile, err := os.Open(srcPath)
 		if err != nil {
-			// Don't fail hard if a non-critical custom file is missing, maybe just log.
-			// But for core files like a base report.css, it should be an error.
 			fmt.Fprintf(os.Stderr, "Warning: failed to open source asset %s (path: %s): %v. Skipping.\n", fileName, srcPath, err)
-			continue // Or return err if critical
+			continue
 		}
 		defer srcFile.Close()
 
@@ -94,12 +93,8 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 		}
 	}
 
-	// Special handling for report.css (as in original builder.go)
-	// This combines custom.css and custom_dark.css into the final report.css
-	// Ensure custom.css and custom_dark.css are in your assetsDir.
 	customCSSBytes, err := os.ReadFile(filepath.Join(assetsDir, "custom.css"))
 	if err != nil {
-		// If custom.css is optional, log a warning. If critical, return error.
 		fmt.Fprintf(os.Stderr, "Warning: failed to read custom.css for combining into report.css: %v\n", err)
 	}
 
@@ -111,7 +106,7 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 	var combinedCSS []byte
 	if len(customCSSBytes) > 0 {
 		combinedCSS = append(combinedCSS, customCSSBytes...)
-		combinedCSS = append(combinedCSS, []byte("\n")...) // Add a newline separator
+		combinedCSS = append(combinedCSS, []byte("\n")...)
 	}
 	if len(customDarkCSSBytes) > 0 {
 		combinedCSS = append(combinedCSS, customDarkCSSBytes...)
@@ -123,19 +118,16 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 			return fmt.Errorf("failed to write combined report.css: %w", err)
 		}
 	} else {
-		// If both were missing, you might want a default empty report.css or ensure one is copied.
-		// For now, if both are missing, report.css won't be created by this specific logic block.
-		// Consider copying a base report.css if one exists and this dynamic creation isn't the primary source.
 		fmt.Fprintf(os.Stderr, "Warning: custom.css and custom_dark.css were not found; report.css may be missing or incomplete.\n")
 	}
 
 	return nil
 }
 
-// copyAngularAssets copies all files from the Angular app's dist folder
-// (e.g., angular_frontend_spa/dist) to the report's output directory.
+// copyAngularAssets recursively copies all files from the Angular app's dist folder
+// to the report's output directory, preserving the directory structure and file permissions.
+// Returns an error if the source directory doesn't exist or if any file operation fails.
 func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
-	// angularDistSourcePath is your 'angular_frontend_spa/dist'
 	srcInfo, err := os.Stat(angularDistSourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -147,38 +139,29 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 		return fmt.Errorf("angular source path %s is not a directory", angularDistSourcePath)
 	}
 
-	// Walk the source directory (angularDistSourcePath)
 	return filepath.WalkDir(angularDistSourcePath, func(srcPath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			// Error accessing path, e.g. permission issue
 			return fmt.Errorf("error accessing path %s during walk: %w", srcPath, walkErr)
 		}
 
-		// Get the relative path of the current file/dir with respect to the source root
 		relPath, err := filepath.Rel(angularDistSourcePath, srcPath)
 		if err != nil {
 			return fmt.Errorf("failed to get relative path for %s: %w", srcPath, err)
 		}
 
-		// Construct the destination path in the output directory
 		dstPath := filepath.Join(outputDir, relPath)
 
 		if d.IsDir() {
-			// If it's a directory, create it in the destination
-			// MkdirAll is idempotent, so it's fine if it already exists
-			if err := os.MkdirAll(dstPath, 0755); err != nil { // Use 0755 for directory permissions
+			if err := os.MkdirAll(dstPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", dstPath, err)
 			}
 		} else {
-			// If it's a file, copy it
 			srcFile, err := os.Open(srcPath)
 			if err != nil {
 				return fmt.Errorf("failed to open source file %s: %w", srcPath, err)
 			}
 			defer srcFile.Close()
 
-			// Ensure destination directory exists (it should if MkdirAll worked above for parent)
-			// but good practice for files directly under outputDir if angularDistSourcePath has files at root
 			if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
 				return fmt.Errorf("failed to create parent directory for %s: %w", dstPath, err)
 			}
@@ -193,7 +176,6 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 				return fmt.Errorf("failed to copy file from %s to %s: %w", srcPath, dstPath, err)
 			}
 
-			// Attempt to set same permissions as source file
 			srcFileInfo, statErr := d.Info()
 			if statErr == nil {
 				if chmodErr := os.Chmod(dstPath, srcFileInfo.Mode()); chmodErr != nil {
@@ -205,7 +187,10 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 	})
 }
 
-// parseAngularIndexHTML parses index.html and returns the script and style references
+// parseAngularIndexHTML parses the Angular index.html file and extracts references to
+// critical assets including CSS and JavaScript files (runtime, polyfills, and main).
+// Returns the file paths for CSS, runtime JS, polyfills JS, and main JS files.
+// Returns an error if the file cannot be opened or parsed.
 func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (cssFile, runtimeJs, polyfillsJs, mainJs string, err error) {
 	file, err := os.Open(angularIndexHTMLPath)
 	if err != nil {
@@ -213,10 +198,11 @@ func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (
 	}
 	defer file.Close()
 
-	doc, err := html.Parse(file) // Using golang.org/x/net/html
+	doc, err := html.Parse(file)
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("failed to parse Angular index.html: %w", err)
 	}
+
 	var f func(*html.Node)
 	f = func(n *html.Node) {
 		if n.Type == html.ElementNode {
@@ -232,11 +218,11 @@ func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (
 					}
 				}
 				if isStylesheet && href != "" {
-					cssFile = href // Found CSS file
+					cssFile = href
 				}
 			} else if n.Data == "script" {
 				var src string
-				isModule := false // Angular scripts are typically type="module"
+				isModule := false
 				for _, a := range n.Attr {
 					if a.Key == "src" {
 						src = a.Val
@@ -245,8 +231,7 @@ func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (
 						isModule = true
 					}
 				}
-				if src != "" && isModule { // Only consider module scripts for runtime, polyfills, main
-					// filepath.Base(src) is important if src contains paths like "static/js/runtime.js"
+				if src != "" && isModule {
 					baseSrc := filepath.Base(src)
 					if strings.HasPrefix(baseSrc, "runtime.") && strings.HasSuffix(baseSrc, ".js") {
 						runtimeJs = src
@@ -263,5 +248,5 @@ func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (
 		}
 	}
 	f(doc)
-	return // cssFile, runtimeJs, polyfillsJs, mainJs, nil (err is already nil)
+	return
 }
