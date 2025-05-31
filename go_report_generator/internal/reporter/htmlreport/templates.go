@@ -215,17 +215,17 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
                 </div>
             </div>
 
-            {{if .Class.FilesWithMetrics}}
+            {{if .Class.FilesWithMetrics}} <!-- This condition might need to be based on .Class.MetricsTable.Rows now -->
             <h1>{{.Translations.Metrics}}</h1>
             <div class="table-responsive">
                 <table class="overview table-fixed">
                     <colgroup>
-                        <col class="column-min-200" />
+                        <col class="column-min-200" /> <!-- For Method Name -->
                         {{range .Class.MetricsTable.Headers}}
                         <col class="column105" />
                         {{end}}
                     </colgroup>
-                    <thead><tr><th>{{$.Translations.Method}}</th>
+                    <thead><tr><th>{{$.Translations.Method}}</th> <!-- Ensure "Method" is in translations -->
                         {{range .Class.MetricsTable.Headers}}
                         <th>{{.Name}} {{if .ExplanationURL}}<a href="{{.ExplanationURL}}" target="_blank"><i class="icon-info-circled"></i></a>{{end}}</th>
                         {{end}}

@@ -764,128 +764,253 @@ func (b *HtmlReportBuilder) buildSidebarElementViewModel(codeElem *model.CodeEle
 		sidebarElem.Icon = "wrench"
 	}
 	if codeElem.CoverageQuota != nil {
-		sidebarElem.CoverageBarValue = 100 - int(math.Round(*codeElem.CoverageQuota))
+		sidebarElem.CoverageBarValue = int(math.Round(*codeElem.CoverageQuota))
 		sidebarElem.CoverageTitle = fmt.Sprintf("Line coverage: %.1f%%", *codeElem.CoverageQuota)
 	} else {
-		sidebarElem.CoverageBarValue = 0 // Default for N/A
+		sidebarElem.CoverageBarValue = -1 // For N/A items
 		sidebarElem.CoverageTitle = "Line coverage: N/A"
 	}
 	return sidebarElem
 }
 
-func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class, allMethodMetricsForClass []*model.MethodMetric) MetricsTableViewModel {
-	metricsTable := MetricsTableViewModel{}
-	seenMetricTypes := make(map[string]AngularMetricDefinitionViewModel)
-	orderedMetricNames := []string{}
-
-	for _, modelMM := range allMethodMetricsForClass {
-		for _, modelMetric := range modelMM.Metrics {
-			if _, found := seenMetricTypes[modelMetric.Name]; !found {
-				explURL := b.getMetricExplanationURL(modelMetric.Name)
-				seenMetricTypes[modelMetric.Name] = AngularMetricDefinitionViewModel{Name: modelMetric.Name, ExplanationURL: explURL}
-				orderedMetricNames = append(orderedMetricNames, modelMetric.Name)
-			}
-		}
-	}
-	sort.Strings(orderedMetricNames) // Consistent header order
-	for _, name := range orderedMetricNames {
-		metricsTable.Headers = append(metricsTable.Headers, seenMetricTypes[name])
+// getStandardMetricHeaders defines the order and names of metrics for the table.
+func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinitionViewModel {
+	standardMetricKeys := []string{ // Use non-translated keys here for logic
+		"Branch coverage",
+		"CrapScore",
+		"Cyclomatic complexity",
+		"Line coverage",
 	}
 
-	// Map method metrics to their file context (short path, index)
-	methodMetricToFileContext := make(map[*model.MethodMetric]struct {
-		Index     int
-		ShortPath string
-	})
-	for fIdx, f := range classModel.Files {
-		shortPath := sanitizeFilenameChars.ReplaceAllString(filepath.Base(f.Path), "_")
-		for i := range f.MethodMetrics {
-			methodMetricToFileContext[&f.MethodMetrics[i]] = struct {
-				Index     int
-				ShortPath string
-			}{Index: fIdx, ShortPath: shortPath}
+	var headers []AngularMetricDefinitionViewModel
+	for _, key := range standardMetricKeys {
+		translatedName := b.translations[key]
+		if translatedName == "" {
+			translatedName = key // Fallback to key if translation missing
 		}
+		headers = append(headers, AngularMetricDefinitionViewModel{
+			Name:           translatedName,
+			ExplanationURL: b.getMetricExplanationURL(key), // Use key for explanation URL
+		})
 	}
-
-	for _, modelMM := range allMethodMetricsForClass {
-		fileCtx := methodMetricToFileContext[modelMM]
-		var correspondingCE *model.CodeElement
-		for _, f := range classModel.Files { // Find corresponding CodeElement for coverage/type
-			for _, ce := range f.CodeElements {
-				if ce.FirstLine == modelMM.Line && strings.HasPrefix(ce.FullName, modelMM.Name) {
-					correspondingCE = &ce
-					break
-				}
-			}
-			if correspondingCE != nil {
-				break
-			}
-		}
-
-		row := AngularMethodMetricsViewModel{
-			Name:           modelMM.Name,
-			FullName:       modelMM.Name, // Placeholder, full name with signature usually different
-			FileIndexPlus1: fileCtx.Index + 1,
-			Line:           modelMM.Line,
-			FileShortPath:  fileCtx.ShortPath,
-			MetricValues:   make([]string, len(metricsTable.Headers)),
-		}
-		if correspondingCE != nil {
-			row.IsProperty = (correspondingCE.Type == model.PropertyElementType)
-			row.CoverageQuota = correspondingCE.CoverageQuota
-			row.FullName = correspondingCE.FullName // Use code element's full name
-		}
-
-		currentMethodValues := make(map[string]string)
-		for _, metric := range modelMM.Metrics {
-			currentMethodValues[metric.Name] = b.formatMetricValue(metric)
-		}
-		for i, header := range metricsTable.Headers {
-			if val, ok := currentMethodValues[header.Name]; ok {
-				row.MetricValues[i] = val
-			} else {
-				row.MetricValues[i] = "-" // Metric not present for this method
-			}
-		}
-		metricsTable.Rows = append(metricsTable.Rows, row)
-	}
-	return metricsTable
-
+	return headers
 }
 
-func (b *HtmlReportBuilder) getMetricExplanationURL(metricName string) string {
-	switch metricName {
-	case "Cyclomatic Complexity", "Complexity": // "Complexity" is often used for Cyc. Comp.
+// findCorrespondingCodeElement links a model.Method to its model.CodeElement.
+// This is crucial for getting display names, proper links, and coverage quotas.
+func findCorrespondingCodeElement(method *model.Method, classModel *model.Class) (*model.CodeElement, string, int) {
+	for fIdx, f := range classModel.Files {
+		for _, ce := range f.CodeElements {
+			// Matching criteria:
+			// 1. FirstLine must match.
+			// 2. The CodeElement's FullName should ideally be method.Name + method.Signature
+			//    or CodeElement.Name is method.Name (if signature is not part of ce.Name).
+			//    The C# version has various ways these names are constructed.
+			//    A robust match might require ce.FullName == (method.Name + method.Signature)
+			//    For now, matching FirstLine and the base name (method.Name)
+			if ce.FirstLine == method.FirstLine && (ce.Name == method.Name || strings.HasPrefix(ce.FullName, method.Name+method.Signature)) {
+				fileShortPath := sanitizeFilenameChars.ReplaceAllString(filepath.Base(f.Path), "_")
+				return &ce, fileShortPath, fIdx + 1
+			}
+		}
+	}
+	return nil, "", 0
+}
+
+// buildSingleMetricRow creates one AngularMethodMetricsViewModel for a method.
+func (b *HtmlReportBuilder) buildSingleMetricRow(
+	method *model.Method,
+	correspondingCE *model.CodeElement,
+	fileShortPath string,
+	fileIndexPlus1 int,
+	headers []AngularMetricDefinitionViewModel,
+) AngularMethodMetricsViewModel {
+
+	var displayName, fullNameForTitle string
+	var lineToLink int
+	var isProperty bool
+	var coverageQuota *float64
+
+	if correspondingCE != nil {
+		// Use CodeElement's Name for display, which is typically the method name without full signature.
+		// The original report seems to use the CodeElement's name and then appends the signature
+		// if the signature is not "()" and not already part of the CodeElement's name.
+		displayName = correspondingCE.Name
+		if method.Signature != "" && method.Signature != "()" {
+			// Check if signature is already somewhat represented in displayName
+			// This is tricky because ce.Name might be "MyMethod" or "MyMethod()"
+			// and method.Signature might be "(System.String)"
+			if !strings.Contains(displayName, "(") { // If no parens in ce.Name, append full signature
+				displayName += method.Signature
+			} else if strings.HasSuffix(displayName, "()") { // If ce.Name is "MyMethod()", replace "()" with actual signature
+				displayName = strings.TrimSuffix(displayName, "()") + method.Signature
+			}
+			// If ce.Name already contains a signature-like part, we might leave it,
+			// or try to be smarter. For now, this is a common case.
+		}
+
+
+		fullNameForTitle = correspondingCE.FullName // This should be the most complete name
+		lineToLink = correspondingCE.FirstLine
+		isProperty = (correspondingCE.Type == model.PropertyElementType)
+		coverageQuota = correspondingCE.CoverageQuota
+	} else {
+		// Fallback if CodeElement wasn't found
+		displayName = method.Name // Raw XML name
+		if method.Signature != "" && method.Signature != "()" {
+			displayName += method.Signature
+		}
+		fullNameForTitle = displayName // Best guess for full name
+		lineToLink = method.FirstLine
+		isProperty = strings.HasPrefix(method.Name, "get_") || strings.HasPrefix(method.Name, "set_")
+	}
+
+	row := AngularMethodMetricsViewModel{
+		Name:           displayName,
+		FullName:       fullNameForTitle,
+		FileIndexPlus1: fileIndexPlus1,
+		Line:           lineToLink,
+		FileShortPath:  fileShortPath,
+		IsProperty:     isProperty,
+		CoverageQuota:  coverageQuota,
+		MetricValues:   make([]string, len(headers)),
+	}
+
+	// Populate metric values (logic remains the same as previous correct version)
+	methodMetricsMap := make(map[string]model.Metric)
+	for _, mm := range method.MethodMetrics {
+		for _, m := range mm.Metrics {
+			methodMetricsMap[m.Name] = m
+		}
+	}
+
+	for i, headerVM := range headers {
+		var originalMetricKey string
+		// Simplified reverse lookup for known standard keys (assuming Option A for viewmodel is not yet implemented)
+		switch headerVM.Name {
+		case b.translations["Branch coverage"]: originalMetricKey = "Branch coverage"
+		case b.translations["CrapScore"]: originalMetricKey = "CrapScore"
+		case b.translations["Cyclomatic complexity"]: originalMetricKey = "Cyclomatic complexity"
+		case b.translations["Line coverage"]: originalMetricKey = "Line coverage"
+		default: // Fallback if not one of the standard translated ones, or translation matches key
+			originalMetricKey = headerVM.Name // This assumes headerVM.Name is the key if not found in above cases
+			// A more robust reverse lookup might still be needed if translations are complex
+			// or if you implement Option A for AngularMetricDefinitionViewModel.OriginalKey
+			if _, ok := methodMetricsMap[originalMetricKey]; !ok { // If direct match fails, iterate translations
+				for key, translatedVal := range b.translations {
+					if translatedVal == headerVM.Name && (key == "Branch coverage" || key == "CrapScore" || key == "Cyclomatic complexity" || key == "Line coverage" || key == "Complexity") {
+						originalMetricKey = key
+						break
+					}
+				}
+			}
+		}
+
+
+		if metric, ok := methodMetricsMap[originalMetricKey]; ok {
+			row.MetricValues[i] = b.formatMetricValue(metric)
+		} else if originalMetricKey == "Cyclomatic complexity" {
+			if cxMetric, cxOk := methodMetricsMap["Complexity"]; cxOk {
+				row.MetricValues[i] = b.formatMetricValue(cxMetric)
+			} else {
+				row.MetricValues[i] = "-"
+			}
+		} else {
+			row.MetricValues[i] = "-"
+		}
+	}
+	return row
+}
+
+
+func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class, _ []*model.MethodMetric) MetricsTableViewModel {
+	metricsTable := MetricsTableViewModel{}
+	metricsTable.Headers = b.getStandardMetricHeaders()
+
+	if len(classModel.Methods) == 0 {
+		return metricsTable
+	}
+
+	// Create a temporary slice of methods with their CodeElement and file context
+	// to preserve the original order from classModel.Methods if CodeElements are correctly ordered.
+	// The order of methods in classModel.Methods should ideally reflect source order.
+	// The order of CodeElements in classModel.Files[...].CodeElements should also reflect source order.
+
+	// The critical part is that `classModel.Methods` should already be in source order.
+	// If they are, then iterating through them directly will maintain that order.
+	// The challenge is ensuring the `correspondingCE` is found reliably.
+
+	for _, method := range classModel.Methods {
+		correspondingCE, fileShortPath, fileIndexPlus1 := findCorrespondingCodeElement(&method, classModel)
+
+		if correspondingCE == nil {
+			fmt.Fprintf(os.Stderr, "Warning: Could not find corresponding CodeElement for method %s (line %d) in class %s for metrics table. Using fallback naming.\n", method.Name+method.Signature, method.FirstLine, classModel.DisplayName)
+			// If CE is not found, it might affect linking and precise display name,
+			// but we still want to show the metrics for the method.
+		}
+		
+		row := b.buildSingleMetricRow(&method, correspondingCE, fileShortPath, fileIndexPlus1, metricsTable.Headers)
+		metricsTable.Rows = append(metricsTable.Rows, row)
+	}
+
+	// DO NOT SORT HERE to maintain source order as seen in the original report.
+	// The order of rows will now depend on the order of methods in `classModel.Methods`.
+	// sort.SliceStable(metricsTable.Rows, func(i, j int) bool {
+	// 	return metricsTable.Rows[i].FullName < metricsTable.Rows[j].FullName
+	// })
+	return metricsTable
+}
+
+
+// getMetricExplanationURL (ensure keys match those in getStandardMetricHeaders)
+func (b *HtmlReportBuilder) getMetricExplanationURL(metricKey string) string {
+	switch metricKey { // Use the non-translated key
+	case "Cyclomatic complexity", "Complexity":
 		return "https://en.wikipedia.org/wiki/Cyclomatic_complexity"
 	case "CrapScore":
 		return "https://testing.googleblog.com/2011/02/this-code-is-crap.html"
-	case "NPathComplexity":
-		return "https://modess.io/npath-complexity-cyclomatic-complexity-explained/"
 	case "Line coverage", "Branch coverage":
 		return "https://en.wikipedia.org/wiki/Code_coverage"
 	default:
-		return "" // No specific URL for other metrics
+		return ""
 	}
 }
 
+// formatMetricValue (ensure metric.Name matches the keys used in method.MethodMetrics)
 func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 	if metric.Value == nil {
 		return "-"
 	}
-	if valFloat, ok := metric.Value.(float64); ok {
-		if math.IsNaN(valFloat) {
-			return "NaN"
+	// ... (rest of your formatMetricValue function, it looks mostly okay)
+	// Ensure it handles the precision from settings for coverage values correctly.
+	valFloat, isFloat := metric.Value.(float64)
+	if !isFloat {
+		if valInt, isInt := metric.Value.(int); isInt {
+			return fmt.Sprintf("%d", valInt)
 		}
-		// Specific formatting for coverage percentages
-		if metric.Name == "Line coverage" || metric.Name == "Branch coverage" {
-			return fmt.Sprintf("%.1f%%", valFloat) // Assuming value is already a percentage 0-100
-		}
-		return fmt.Sprintf("%.0f", valFloat) // Default for other float metrics
+		return fmt.Sprintf("%v", metric.Value)
 	}
-	if valInt, okInt := metric.Value.(int); okInt {
-		return fmt.Sprintf("%d", valInt)
+
+	if math.IsNaN(valFloat) {
+		return "NaN"
 	}
-	return fmt.Sprintf("%v", metric.Value) // Fallback for other types
+	if math.IsInf(valFloat, 0) {
+		return "Inf"
+	}
+
+	precision := b.ReportContext.Settings().MaximumDecimalPlacesForCoverageQuotas
+	formatString := fmt.Sprintf("%%.%df", precision)
+
+	switch metric.Name { // Use the non-translated key
+	case "Line coverage", "Branch coverage":
+		return fmt.Sprintf(formatString+"%%", valFloat)
+	case "CrapScore":
+		return fmt.Sprintf("%.2f", valFloat) // CrapScore often displayed with 2 decimal places
+	case "Cyclomatic complexity", "Complexity":
+		return fmt.Sprintf("%.0f", valFloat) // Typically an integer
+	default:
+		return fmt.Sprintf(formatString, valFloat)
+	}
 }
 
 func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class, classVMServer *ClassViewModelForDetail) (AngularClassDetailViewModel, error) {
@@ -982,7 +1107,7 @@ func (b *HtmlReportBuilder) buildAngularLineViewModelForJS(content string, actua
 func (b *HtmlReportBuilder) buildClassDetailPageData(classVM ClassViewModelForDetail, tag string, classDetailJS template.JS) ClassDetailData {
 	appVersion := "0.0.1" // Placeholder, same as summary
 	if b.ReportContext.ReportConfiguration() != nil {
-		appVersion = "0.0.1" 
+		appVersion = "0.0.1"
 		// Logic to get actual app version if available
 	}
 	return ClassDetailData{
