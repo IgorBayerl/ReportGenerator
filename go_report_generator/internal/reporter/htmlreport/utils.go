@@ -2,14 +2,10 @@ package htmlreport
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-)
-
-var (
-	sanitizeFilenameChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 const (
@@ -30,47 +26,29 @@ func countTotalClasses(assemblies []model.Assembly) int {
 }
 
 func countUniqueFiles(assemblies []model.Assembly) int {
-	uniqueFiles := make(map[string]bool)
+	if len(assemblies) == 0 {
+		return 0
+	}
+
+	var allFiles []model.CodeFile
 	for _, asm := range assemblies {
 		for _, cls := range asm.Classes {
-			for _, f := range cls.Files {
-				uniqueFiles[f.Path] = true
-			}
+			allFiles = append(allFiles, cls.Files...)
 		}
 	}
-	return len(uniqueFiles)
+
+	distinctFiles := utils.DistinctBy(allFiles, func(file model.CodeFile) string {
+		return file.Path // Assuming Path is the unique key
+	})
+
+	return len(distinctFiles)
 }
 
 func (b *HtmlReportBuilder) getClassReportFilename(assemblyShortName, className string, existingFilenames map[string]struct{}) string {
-	processedClassName := className
-	if lastDot := strings.LastIndex(className, "."); lastDot != -1 {
-		processedClassName = className[lastDot+1:]
-	}
-	if strings.HasSuffix(strings.ToLower(processedClassName), ".js") {
-		processedClassName = processedClassName[:len(processedClassName)-3]
-	}
-	baseName := assemblyShortName + "" + processedClassName
-	sanitizedName := sanitizeFilenameChars.ReplaceAllString(baseName, "")
-	maxLengthBase := 95
-	if len(sanitizedName) > maxLengthBase {
-		if maxLengthBase > 50 {
-			sanitizedName = sanitizedName[:50] + sanitizedName[len(sanitizedName)-(maxLengthBase-50):]
-		} else {
-			sanitizedName = sanitizedName[:maxLengthBase]
-		}
-	}
-	fileName := sanitizedName + ".html"
-	counter := 1
-	normalizedFileNameToCheck := strings.ToLower(fileName)
-	_, exists := existingFilenames[normalizedFileNameToCheck]
-	for exists {
-		counter++
-		fileName = fmt.Sprintf("%s%d.html", sanitizedName, counter)
-		normalizedFileNameToCheck = strings.ToLower(fileName)
-		_, exists = existingFilenames[normalizedFileNameToCheck]
-	}
-	existingFilenames[normalizedFileNameToCheck] = struct{}{}
-	return fileName
+	// The generateUniqueFilename function (from internal/reporter/htmlreport/utils.go)
+	// now handles all the logic for processing className, sanitizing, truncating,
+	// and ensuring uniqueness with a counter.
+	return generateUniqueFilename(assemblyShortName, className, existingFilenames)
 }
 
 func determineLineVisitStatus(hits int, isBranchPoint bool, coveredBranches int, totalBranches int) int {
@@ -111,39 +89,26 @@ func lineVisitStatusToString(status int) string {
 // generateUniqueFilename creates a sanitized and unique HTML filename for a class.
 // It takes assembly and class names, and a map of existing filenames to ensure uniqueness.
 // The existingFilenames map is modified by this function.
-func generateUniqueFilename( // Renamed to lowercase
+func generateUniqueFilename(
 	assemblyShortName string,
 	className string,
 	existingFilenames map[string]struct{},
 ) string {
-	// 1. Determine the effective class name part (after last namespace separator)
 	namePart := className
 	if lastDot := strings.LastIndex(className, "."); lastDot != -1 {
 		namePart = className[lastDot+1:]
 	}
 
-	// 2. Handle specific ".js" suffix if it's the entirety of namePart
 	processedClassName := namePart
 	if strings.ToLower(namePart) == "js" && strings.HasSuffix(strings.ToLower(className), ".js") {
-		// This case handles "Namespace.js" -> "" or "js.js" -> "js"
-		// If the original full class name ended with ".js" AND the part after the last dot is just "js",
-		// then we effectively treat the class name part as empty or strip the .js from the segment.
-		// Let's be more direct: if namePart is "js", just use it.
-		// The original C# logic might be more nuanced for specific tools that output ".js" classes.
-		// For "MyClass.js" -> namePart is "MyClass.js".
-		// For "MyNamespace.MyClass.js" -> namePart is "MyClass.js".
 		if strings.HasSuffix(strings.ToLower(namePart), ".js") {
 			processedClassName = namePart[:len(namePart)-3]
 		}
-
 	} else if strings.HasSuffix(strings.ToLower(namePart), ".js") {
-		// General case: if namePart ends with .js (e.g. "SomeFile.js"), strip it.
 		processedClassName = namePart[:len(namePart)-3]
 	}
 
-	// 3. Further simplify processedClassName by taking the segment after common C# nested type separators
-	// This helps with "SomeClass::Sub/Inner" -> "Inner"
-	separators := []string{"+", "/", "::"} // Order might matter if they can be combined
+	separators := []string{"+", "/", "::"}
 	for _, sep := range separators {
 		if strings.Contains(processedClassName, sep) {
 			parts := strings.Split(processedClassName, sep)
@@ -152,7 +117,7 @@ func generateUniqueFilename( // Renamed to lowercase
 	}
 
 	baseName := assemblyShortName + processedClassName
-	sanitizedName := sanitizeFilenameChars.ReplaceAllString(baseName, "")
+	sanitizedName := utils.ReplaceInvalidPathChars(baseName) // Uses the centralized utility
 
 	if len(sanitizedName) > maxFilenameLengthBase {
 		if maxFilenameLengthBase > 50 {
@@ -169,11 +134,11 @@ func generateUniqueFilename( // Renamed to lowercase
 	_, exists := existingFilenames[normalizedFileNameToCheck]
 	for exists {
 		counter++
-		fileName = fmt.Sprintf("%s%d.html", sanitizedName, counter) // Use the original-case sanitizedName for the actual filename
+		fileName = fmt.Sprintf("%s%d.html", sanitizedName, counter)
 		normalizedFileNameToCheck = strings.ToLower(fileName)
 		_, exists = existingFilenames[normalizedFileNameToCheck]
 	}
 
-	existingFilenames[normalizedFileNameToCheck] = struct{}{} // Store lowercase for consistent checking
+	existingFilenames[normalizedFileNameToCheck] = struct{}{}
 	return fileName
 }

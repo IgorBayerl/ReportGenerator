@@ -143,3 +143,5 @@ func processMethodXML(methodXML inputxml.MethodXML, sourceLines []string) (*mode
 
 	return &method, nil
 }
+
+

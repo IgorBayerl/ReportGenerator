@@ -12,6 +12,7 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, classReportFilename string, tag string) error {
@@ -96,28 +97,38 @@ func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model
 }
 
 func (b *HtmlReportBuilder) populateLineCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
-	if cvm.CoverableLines > 0 {
-		lineCoverage := (float64(cvm.CoveredLines) / float64(cvm.CoverableLines)) * 100.0
-		cvm.CoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", lineCoverage)
+	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas
+	lineCoverage := utils.CalculatePercentage(cvm.CoveredLines, cvm.CoverableLines, decimalPlaces)
+	cvm.CoveragePercentageForDisplay = utils.FormatPercentage(lineCoverage, decimalPlaces)
+
+	if !math.IsNaN(lineCoverage) {
 		cvm.CoveragePercentageBarValue = 100 - int(math.Round(lineCoverage))
 		cvm.CoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", cvm.CoveredLines, cvm.CoverableLines)
 	} else {
-		cvm.CoveragePercentageForDisplay = "N/A"
-		cvm.CoveragePercentageBarValue = 0 // Avoid NaN issues with Round
+		cvm.CoveragePercentageBarValue = 0
 		cvm.CoverageRatioTextForDisplay = "-"
 	}
 }
 
 func (b *HtmlReportBuilder) populateBranchCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
+	// Ensure b.branchCoverageAvailable is correctly set in the HtmlReportBuilder
 	if b.branchCoverageAvailable && classModel.BranchesValid != nil && *classModel.BranchesValid > 0 && classModel.BranchesCovered != nil {
 		cvm.CoveredBranches = *classModel.BranchesCovered
 		cvm.TotalBranches = *classModel.BranchesValid
-		branchCoverage := (float64(cvm.CoveredBranches) / float64(cvm.TotalBranches)) * 100.0
-		cvm.BranchCoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", branchCoverage)
-		cvm.BranchCoveragePercentageBarValue = 100 - int(math.Round(branchCoverage))
-		cvm.BranchCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", cvm.CoveredBranches, cvm.TotalBranches)
+		// Use utils.CalculatePercentage and utils.FormatPercentage
+		decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas
+		branchCoverage := utils.CalculatePercentage(*classModel.BranchesCovered, *classModel.BranchesValid, decimalPlaces)
+		cvm.BranchCoveragePercentageForDisplay = utils.FormatPercentage(branchCoverage, decimalPlaces)
+
+		if !math.IsNaN(branchCoverage) {
+			cvm.BranchCoveragePercentageBarValue = 100 - int(math.Round(branchCoverage))
+			cvm.BranchCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", cvm.CoveredBranches, cvm.TotalBranches)
+		} else {
+			cvm.BranchCoveragePercentageBarValue = 0
+			cvm.BranchCoverageRatioTextForDisplay = "-"
+		}
 	} else {
-		cvm.BranchCoveragePercentageForDisplay = "N/A"
+		cvm.BranchCoveragePercentageForDisplay = "N/A" // From translations ideally
 		cvm.BranchCoveragePercentageBarValue = 0
 		cvm.BranchCoverageRatioTextForDisplay = "-"
 	}
@@ -173,18 +184,16 @@ func (b *HtmlReportBuilder) populateAggregatedMetricsForClassVM(cvm *ClassViewMo
 func (b *HtmlReportBuilder) buildFileViewModelForServerRender(fileInClass *model.CodeFile) (FileViewModelForDetail, []string, error) {
 	fileVM := FileViewModelForDetail{
 		Path:      fileInClass.Path,
-		ShortPath: sanitizeFilenameChars.ReplaceAllString(filepath.Base(fileInClass.Path), "_"),
+		ShortPath: utils.ReplaceInvalidPathChars(filepath.Base(fileInClass.Path)),
 	}
 	sourceLines, err := filereader.ReadLinesInFile(fileInClass.Path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not read source file %s: %v\n", fileInClass.Path, err)
-		// Return an empty FileViewModel or handle error appropriately
-		// For now, we'll proceed with empty source lines if read fails, lines will be empty.
 		sourceLines = []string{}
 	}
 
 	coverageLinesMap := make(map[int]*model.Line)
-	for i := range fileInClass.Lines { // Make sure to use index to get pointer
+	for i := range fileInClass.Lines {
 		covLine := &fileInClass.Lines[i]
 		coverageLinesMap[covLine.Number] = covLine
 	}
@@ -195,8 +204,7 @@ func (b *HtmlReportBuilder) buildFileViewModelForServerRender(fileInClass *model
 		lineVM := b.buildLineViewModelForServerRender(lineContent, actualLineNumber, modelCovLine, hasCoverageData)
 		fileVM.Lines = append(fileVM.Lines, lineVM)
 	}
-	return fileVM, sourceLines, nil // Return sourceLines in case they are needed by caller
-
+	return fileVM, sourceLines, nil
 }
 
 func (b *HtmlReportBuilder) buildLineViewModelForServerRender(lineContent string, actualLineNumber int, modelCovLine *model.Line, hasCoverageData bool) LineViewModelForDetail {
@@ -290,15 +298,9 @@ func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinition
 func findCorrespondingCodeElement(method *model.Method, classModel *model.Class) (*model.CodeElement, string, int) {
 	for fIdx, f := range classModel.Files {
 		for _, ce := range f.CodeElements {
-			// Matching criteria:
-			// 1. FirstLine must match.
-			// 2. The CodeElement's FullName should ideally be method.Name + method.Signature
-			//    or CodeElement.Name is method.Name (if signature is not part of ce.Name).
-			//    The C# version has various ways these names are constructed.
-			//    A robust match might require ce.FullName == (method.Name + method.Signature)
-			//    For now, matching FirstLine and the base name (method.Name)
 			if ce.FirstLine == method.FirstLine && (ce.Name == method.Name || strings.HasPrefix(ce.FullName, method.Name+method.Signature)) {
-				fileShortPath := sanitizeFilenameChars.ReplaceAllString(filepath.Base(f.Path), "_")
+				// Use the new utility function for ShortPath, consistent with buildFileViewModelForServerRender
+				fileShortPath := utils.ReplaceInvalidPathChars(filepath.Base(f.Path))
 				return &ce, fileShortPath, fIdx + 1
 			}
 		}
@@ -465,8 +467,6 @@ func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 	if metric.Value == nil {
 		return "-"
 	}
-	// ... (rest of your formatMetricValue function, it looks mostly okay)
-	// Ensure it handles the precision from settings for coverage values correctly.
 	valFloat, isFloat := metric.Value.(float64)
 	if !isFloat {
 		if valInt, isInt := metric.Value.(int); isInt {
@@ -482,18 +482,17 @@ func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 		return "Inf"
 	}
 
-	precision := b.ReportContext.Settings().MaximumDecimalPlacesForCoverageQuotas
-	formatString := fmt.Sprintf("%%.%df", precision)
+	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas // Use from builder
 
-	switch metric.Name { // Use the non-translated key
-	case "Line coverage", "Branch coverage":
-		return fmt.Sprintf(formatString+"%%", valFloat)
+	switch metric.Name {
+	case "Line coverage", "Branch coverage": // These are already percentages
+		return utils.FormatPercentage(valFloat, decimalPlaces)
 	case "CrapScore":
-		return fmt.Sprintf("%.2f", valFloat) // CrapScore often displayed with 2 decimal places
+		return fmt.Sprintf("%.2f", valFloat)
 	case "Cyclomatic complexity", "Complexity":
-		return fmt.Sprintf("%.0f", valFloat) // Typically an integer
+		return fmt.Sprintf("%.0f", valFloat)
 	default:
-		return fmt.Sprintf(formatString, valFloat)
+		return fmt.Sprintf(fmt.Sprintf("%%.%df", decimalPlaces), valFloat)
 	}
 }
 

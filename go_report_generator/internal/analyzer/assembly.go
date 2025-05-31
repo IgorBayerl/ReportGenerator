@@ -4,13 +4,13 @@ package analyzer
 import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 func processPackageXML(pkgXML inputxml.PackageXML, sourceDirs []string, uniqueFilePathsForGrandTotalLines map[string]int) (*model.Assembly, error) {
 	assembly := model.Assembly{
 		Name:    pkgXML.Name,
 		Classes: []model.Class{},
-		// BranchesCovered and BranchesValid will be nil initially
 	}
 	assemblyProcessedFilePaths := make(map[string]struct{})
 
@@ -37,26 +37,54 @@ func processPackageXML(pkgXML inputxml.PackageXML, sourceDirs []string, uniqueFi
 	var totalAsmBranchesCovered, totalAsmBranchesValid int
 	hasAsmBranchData := false
 
+	// Option 1: Keep direct sum (current Go code) - Recommended for simplicity here
+	// for i := range assembly.Classes {
+	// 	cls := &assembly.Classes[i]
+	// 	assembly.LinesCovered += cls.LinesCovered
+	// 	assembly.LinesValid += cls.LinesValid
+
+	// 	if cls.BranchesCovered != nil && cls.BranchesValid != nil {
+	// 		hasAsmBranchData = true
+	// 		totalAsmBranchesCovered += *cls.BranchesCovered
+	// 		totalAsmBranchesValid += *cls.BranchesValid
+	// 	}
+	// }
+
+	// Option 2: Using utils.SafeSumInt (if strict overflow checking desired)
+
+	var allClassLinesCovered []int
+	var allClassLinesValid []int
+	var allClassBranchesCovered []int
+	var allClassBranchesValid []int
+
 	for i := range assembly.Classes {
 		cls := &assembly.Classes[i]
-		assembly.LinesCovered += cls.LinesCovered
-		assembly.LinesValid += cls.LinesValid
+		allClassLinesCovered = append(allClassLinesCovered, cls.LinesCovered)
+		allClassLinesValid = append(allClassLinesValid, cls.LinesValid)
 
 		if cls.BranchesCovered != nil && cls.BranchesValid != nil {
 			hasAsmBranchData = true
-			totalAsmBranchesCovered += *cls.BranchesCovered
-			totalAsmBranchesValid += *cls.BranchesValid
+			allClassBranchesCovered = append(allClassBranchesCovered, *cls.BranchesCovered)
+			allClassBranchesValid = append(allClassBranchesValid, *cls.BranchesValid)
 		}
 	}
-
+	assembly.LinesCovered = utils.SafeSumInt(allClassLinesCovered)
+	assembly.LinesValid = utils.SafeSumInt(allClassLinesValid)
 	if hasAsmBranchData {
+		bc := utils.SafeSumInt(allClassBranchesCovered)
+		bv := utils.SafeSumInt(allClassBranchesValid)
+		assembly.BranchesCovered = &bc
+		assembly.BranchesValid = &bv
+	}
+
+	if hasAsmBranchData { // This part remains common to both options
 		assembly.BranchesCovered = &totalAsmBranchesCovered
 		assembly.BranchesValid = &totalAsmBranchesValid
 	}
 
 	for path := range assemblyProcessedFilePaths {
 		if lineCount, ok := uniqueFilePathsForGrandTotalLines[path]; ok {
-			assembly.TotalLines += lineCount
+			assembly.TotalLines += lineCount // Direct sum fine for TotalLines
 		}
 	}
 

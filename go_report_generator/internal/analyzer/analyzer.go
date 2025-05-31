@@ -9,6 +9,7 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 func Analyze(rawReport *inputxml.CoberturaRoot, sourceDirs []string) (*model.SummaryResult, error) {
@@ -76,7 +77,12 @@ func Analyze(rawReport *inputxml.CoberturaRoot, sourceDirs []string) (*model.Sum
 // UTILS
 
 // parseInt is a utility function to parse string to int, ignoring errors for simplicity.
-func parseInt(s string) int { v, _ := strconv.Atoi(s); return v }
+func parseInt(s string) int {
+	// The C# ParseLargeInteger returns int.MaxValue on failure.
+	// Here, we'll fallback to 0 for simplicity, as the original Go code did.
+	// If int.MaxValue behavior is critical, change the fallback.
+	return utils.ParseLargeInteger(s, 0)
+}
 
 // parseFloat is a utility function to parse string to float64, ignoring errors.
 func parseFloat(s string) float64 {

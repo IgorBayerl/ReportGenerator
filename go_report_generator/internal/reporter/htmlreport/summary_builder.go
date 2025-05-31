@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 func (b *HtmlReportBuilder) prepareGlobalJSONData(report *model.SummaryResult) error {
@@ -54,21 +55,26 @@ func (b *HtmlReportBuilder) prepareGlobalJSONData(report *model.SummaryResult) e
 }
 
 func (b *HtmlReportBuilder) collectHistoricExecutionTimes(report *model.SummaryResult) []string {
-	uniqueExecutionTimestamps := make(map[int64]bool)
+	var allHistoricCoverages []model.HistoricCoverage
 	if report.Assemblies != nil {
 		for _, assembly := range report.Assemblies {
 			for _, class := range assembly.Classes {
-				for _, hist := range class.HistoricCoverages {
-					if _, exists := uniqueExecutionTimestamps[hist.ExecutionTime]; !exists {
-						uniqueExecutionTimestamps[hist.ExecutionTime] = true
-					}
-				}
+				allHistoricCoverages = append(allHistoricCoverages, class.HistoricCoverages...)
 			}
 		}
 	}
-	var executionTimes []string
-	for ts := range uniqueExecutionTimestamps {
-		executionTimes = append(executionTimes, time.Unix(ts, 0).Format("2006-01-02 15:04:05"))
+
+	if len(allHistoricCoverages) == 0 {
+		return []string{}
+	}
+
+	distinctHistoricCoverages := utils.DistinctBy(allHistoricCoverages, func(hc model.HistoricCoverage) int64 {
+		return hc.ExecutionTime
+	})
+
+	executionTimes := make([]string, len(distinctHistoricCoverages))
+	for i, hc := range distinctHistoricCoverages {
+		executionTimes[i] = time.Unix(hc.ExecutionTime, 0).Format("2006-01-02 15:04:05")
 	}
 	sort.Strings(executionTimes) // Ensure consistent order
 	return executionTimes
@@ -204,6 +210,7 @@ func (b *HtmlReportBuilder) buildSummaryPageData(report *model.SummaryResult, _ 
 
 func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []CardViewModel {
 	var cards []CardViewModel
+	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas // Sourced from settings via builder properties
 
 	// Information Card
 	infoCardRows := []CardRowViewModel{
@@ -221,13 +228,17 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 	cards = append(cards, CardViewModel{Title: b.translations["Information"], Rows: infoCardRows})
 
 	// Line Coverage Card
-	lineCovQuota, lineCovText, lineCovTooltip, lineCovBar := 0.0, "N/A", "-", 0
-	if report.LinesValid > 0 {
-		lineCovQuota = (float64(report.LinesCovered) / float64(report.LinesValid)) * 100.0
-		lineCovText = fmt.Sprintf("%.1f%%", lineCovQuota)
+	lineCovQuota := utils.CalculatePercentage(report.LinesCovered, report.LinesValid, decimalPlaces)
+	lineCovText := utils.FormatPercentage(lineCovQuota, decimalPlaces)
+	lineCovTooltip := "-"
+	if !math.IsNaN(lineCovQuota) {
 		lineCovTooltip = fmt.Sprintf("%d of %d", report.LinesCovered, report.LinesValid)
+	}
+	lineCovBar := 0
+	if !math.IsNaN(lineCovQuota) {
 		lineCovBar = 100 - int(math.Round(lineCovQuota))
 	}
+
 	cards = append(cards, CardViewModel{Title: b.translations["LineCoverage"], SubTitle: lineCovText, SubTitlePercentageBarValue: lineCovBar, Rows: []CardRowViewModel{
 		{Header: b.translations["CoveredLines"], Text: fmt.Sprintf("%d", report.LinesCovered), Alignment: "right"},
 		{Header: b.translations["UncoveredLines"], Text: fmt.Sprintf("%d", report.LinesValid-report.LinesCovered), Alignment: "right"},
@@ -238,13 +249,17 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 
 	// Branch Coverage Card (Conditional)
 	if b.branchCoverageAvailable && report.BranchesCovered != nil && report.BranchesValid != nil {
-		branchCovQuota, branchCovText, branchCovTooltip, branchCovBar := 0.0, "N/A", "-", 0
-		if *report.BranchesValid > 0 {
-			branchCovQuota = (float64(*report.BranchesCovered) / float64(*report.BranchesValid)) * 100.0
-			branchCovText = fmt.Sprintf("%.1f%%", branchCovQuota)
+		branchCovQuota := utils.CalculatePercentage(*report.BranchesCovered, *report.BranchesValid, decimalPlaces)
+		branchCovText := utils.FormatPercentage(branchCovQuota, decimalPlaces)
+		branchCovTooltip := "-"
+		if !math.IsNaN(branchCovQuota) {
 			branchCovTooltip = fmt.Sprintf("%d of %d", *report.BranchesCovered, *report.BranchesValid)
+		}
+		branchCovBar := 0
+		if !math.IsNaN(branchCovQuota) {
 			branchCovBar = 100 - int(math.Round(branchCovQuota))
 		}
+
 		cards = append(cards, CardViewModel{Title: b.translations["BranchCoverage"], SubTitle: branchCovText, SubTitlePercentageBarValue: branchCovBar, Rows: []CardRowViewModel{
 			{Header: b.translations["CoveredBranches2"], Text: fmt.Sprintf("%d", *report.BranchesCovered), Alignment: "right"},
 			{Header: b.translations["TotalBranches"], Text: fmt.Sprintf("%d", *report.BranchesValid), Alignment: "right"},
@@ -261,18 +276,24 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 			fullyCoveredMethods += cls.FullyCoveredMethods
 		}
 	}
-	methodCovText, methodCovBar, methodCovTooltip := "N/A", 0, "-"
-	fullMethodCovText, fullMethodCovTooltip := "N/A", "-"
-	if totalMethods > 0 {
-		methodRate := (float64(coveredMethods) / float64(totalMethods)) * 100.0
-		methodCovText = fmt.Sprintf("%.1f%%", methodRate)
-		methodCovBar = 100 - int(math.Round(methodRate))
+	methodCovQuota := utils.CalculatePercentage(coveredMethods, totalMethods, decimalPlaces)
+	methodCovText := utils.FormatPercentage(methodCovQuota, decimalPlaces)
+	methodCovTooltip := "-"
+	if !math.IsNaN(methodCovQuota) {
 		methodCovTooltip = fmt.Sprintf("%d of %d", coveredMethods, totalMethods)
+	}
+	methodCovBar := 0
+	if !math.IsNaN(methodCovQuota) {
+		methodCovBar = 100 - int(math.Round(methodCovQuota))
+	}
 
-		fullMethodRate := (float64(fullyCoveredMethods) / float64(totalMethods)) * 100.0
-		fullMethodCovText = fmt.Sprintf("%.1f%%", fullMethodRate)
+	fullMethodCovQuota := utils.CalculatePercentage(fullyCoveredMethods, totalMethods, decimalPlaces)
+	fullMethodCovText := utils.FormatPercentage(fullMethodCovQuota, decimalPlaces)
+	fullMethodCovTooltip := "-"
+	if !math.IsNaN(fullMethodCovQuota) {
 		fullMethodCovTooltip = fmt.Sprintf("%d of %d", fullyCoveredMethods, totalMethods)
 	}
+
 	cards = append(cards, CardViewModel{
 		Title: b.translations["MethodCoverage"], ProRequired: !b.methodCoverageAvailable, SubTitle: methodCovText, SubTitlePercentageBarValue: methodCovBar,
 		Rows: []CardRowViewModel{
@@ -284,5 +305,4 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 		},
 	})
 	return cards
-
 }

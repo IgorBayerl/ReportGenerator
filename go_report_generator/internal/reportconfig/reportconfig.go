@@ -70,9 +70,10 @@ func (rc *ReportConfiguration) InvalidReportFilePatterns() []string    { return 
 func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return rc.VLevelValid }
 
 // NewReportConfiguration is a constructor for ReportConfiguration.
-// You'll need to adapt how this is created from your command-line flags (cmd/main.go)
+// reportFiles should be a list of actual, existing file paths after glob expansion.
+// invalidPatterns are any original patterns that did not resolve to files.
 func NewReportConfiguration(
-	reportFiles []string,
+	reportFiles []string, // This is now a list of resolved files
 	targetDir string,
 	sourceDirs []string,
 	historyDir string,
@@ -80,28 +81,27 @@ func NewReportConfiguration(
 	tag string,
 	title string,
 	verbosity logging.VerbosityLevel,
-	// Add other fields like filters as needed
+	invalidPatterns []string, // New parameter
 ) *ReportConfiguration {
 	if len(reportTypes) == 0 {
 		reportTypes = []string{"Html"} // Default
 	}
 	return &ReportConfiguration{
-		RFiles:       reportFiles,
-		TDirectory:   targetDir,
-		SDirectories: sourceDirs,
-		HDirectory:   historyDir,
-		RTypes:       reportTypes,
-		CfgTag:       tag,
-		CfgTitle:     title,
-		VLevel:       verbosity,
-		VLevelValid:  true, // Assume valid for now, add validation if needed
-		// Initialize filter lists as empty slices:
+		RFiles:                        reportFiles,
+		TDirectory:                    targetDir,
+		SDirectories:                  sourceDirs,
+		HDirectory:                    historyDir,
+		RTypes:                        reportTypes,
+		CfgTag:                        tag,
+		CfgTitle:                      title,
+		VLevel:                        verbosity,
+		VLevelValid:                   true,
+		InvalidPatterns:               invalidPatterns, // Store this
 		AssemblyFilterList:            []string{},
 		ClassFilterList:               []string{},
 		FileFilterList:                []string{},
 		RiskHotspotAssemblyFilterList: []string{},
 		RiskHotspotClassFilterList:    []string{},
 		PluginsList:                   []string{},
-		InvalidPatterns:               []string{},
 	}
 }
