@@ -211,6 +211,7 @@ func (b *HtmlReportBuilder) buildSummaryPageData(report *model.SummaryResult, _ 
 func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []CardViewModel {
 	var cards []CardViewModel
 	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas // Sourced from settings via builder properties
+	decimalPlacesForPercentageDisplay := b.maximumDecimalPlacesForPercentageDisplay
 
 	// Information Card
 	infoCardRows := []CardRowViewModel{
@@ -229,7 +230,7 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 
 	// Line Coverage Card
 	lineCovQuota := utils.CalculatePercentage(report.LinesCovered, report.LinesValid, decimalPlaces)
-	lineCovText := utils.FormatPercentage(lineCovQuota, decimalPlaces)
+	lineCovText := utils.FormatPercentage(lineCovQuota, decimalPlacesForPercentageDisplay)
 	lineCovTooltip := "-"
 	if !math.IsNaN(lineCovQuota) {
 		lineCovTooltip = fmt.Sprintf("%d of %d", report.LinesCovered, report.LinesValid)
@@ -250,7 +251,7 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 	// Branch Coverage Card (Conditional)
 	if b.branchCoverageAvailable && report.BranchesCovered != nil && report.BranchesValid != nil {
 		branchCovQuota := utils.CalculatePercentage(*report.BranchesCovered, *report.BranchesValid, decimalPlaces)
-		branchCovText := utils.FormatPercentage(branchCovQuota, decimalPlaces)
+		branchCovText := utils.FormatPercentage(branchCovQuota, decimalPlacesForPercentageDisplay)
 		branchCovTooltip := "-"
 		if !math.IsNaN(branchCovQuota) {
 			branchCovTooltip = fmt.Sprintf("%d of %d", *report.BranchesCovered, *report.BranchesValid)
@@ -277,7 +278,7 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 		}
 	}
 	methodCovQuota := utils.CalculatePercentage(coveredMethods, totalMethods, decimalPlaces)
-	methodCovText := utils.FormatPercentage(methodCovQuota, decimalPlaces)
+	methodCovText := utils.FormatPercentage(methodCovQuota, decimalPlacesForPercentageDisplay)
 	methodCovTooltip := "-"
 	if !math.IsNaN(methodCovQuota) {
 		methodCovTooltip = fmt.Sprintf("%d of %d", coveredMethods, totalMethods)
@@ -288,7 +289,7 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 	}
 
 	fullMethodCovQuota := utils.CalculatePercentage(fullyCoveredMethods, totalMethods, decimalPlaces)
-	fullMethodCovText := utils.FormatPercentage(fullMethodCovQuota, decimalPlaces)
+	fullMethodCovText := utils.FormatPercentage(fullMethodCovQuota, decimalPlacesForPercentageDisplay)
 	fullMethodCovTooltip := "-"
 	if !math.IsNaN(fullMethodCovQuota) {
 		fullMethodCovTooltip = fmt.Sprintf("%d of %d", fullyCoveredMethods, totalMethods)

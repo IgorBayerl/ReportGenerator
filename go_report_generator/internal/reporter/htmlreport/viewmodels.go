@@ -146,12 +146,12 @@ type ClassDetailData struct {
 	AppVersion      string // e.g., "5.4.7.0"
 	CurrentDateTime string
 
-	Class                                 ClassViewModelForDetail // Specific view model for the class being detailed
-	BranchCoverageAvailable               bool
-	MethodCoverageAvailable               bool // To decide whether to show PRO version message
-	Tag                                   string
-	Translations                          map[string]string
-	MaximumDecimalPlacesForCoverageQuotas int // Needed for JS if any Angular components on page use it
+	Class                                    ClassViewModelForDetail // Specific view model for the class being detailed
+	BranchCoverageAvailable                  bool
+	MethodCoverageAvailable                  bool // To decide whether to show PRO version message
+	Tag                                      string
+	Translations                             map[string]string
+	MaximumDecimalPlacesForCoverageQuotas    int // Needed for JS if any Angular components on page use it
 
 	// For JS script includes
 	AngularCssFile         string

@@ -44,6 +44,10 @@ type Settings struct {
 	// Default: 1
 	MaximumDecimalPlacesForCoverageQuotas int
 
+	// MaximumDecimalPlacesForPercentageDisplay controls the precision of displayed percentages.
+	// Default: 0
+	MaximumDecimalPlacesForPercentageDisplay int
+
 	// HistoryFileNamePrefix is an optional prefix for history files.
 	// Default: ""
 	HistoryFileNamePrefix string
@@ -62,17 +66,18 @@ type Settings struct {
 // These defaults mirror those in the C# project's appsettings.json or Settings.cs defaults.
 func NewSettings() *Settings {
 	return &Settings{
-		NumberOfReportsParsedInParallel:       1,
-		NumberOfReportsMergedInParallel:       1,
-		MaximumNumberOfHistoricCoverageFiles:  100,
-		CachingDurationOfRemoteFilesInMinutes: 7 * 24 * 60, // 10080 minutes = 7 days
-		DisableRiskHotspots:                   false,
-		ExcludeTestProjects:                   false,
-		CreateSubdirectoryForAllReportTypes:   false,
-		CustomHeadersForRemoteFiles:           "",
-		DefaultAssemblyName:                   "Default",
-		MaximumDecimalPlacesForCoverageQuotas: 1,
-		HistoryFileNamePrefix:                 "",
-		RawMode:                               false,
+		NumberOfReportsParsedInParallel:          1,
+		NumberOfReportsMergedInParallel:          1,
+		MaximumNumberOfHistoricCoverageFiles:     100,
+		CachingDurationOfRemoteFilesInMinutes:    7 * 24 * 60, // 10080 minutes = 7 days
+		DisableRiskHotspots:                      false,
+		ExcludeTestProjects:                      false,
+		CreateSubdirectoryForAllReportTypes:      false,
+		CustomHeadersForRemoteFiles:              "",
+		DefaultAssemblyName:                      "Default",
+		MaximumDecimalPlacesForCoverageQuotas:    1,
+		MaximumDecimalPlacesForPercentageDisplay: 0,
+		HistoryFileNamePrefix:                    "",
+		RawMode:                                  false,
 	}
 }

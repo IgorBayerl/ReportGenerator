@@ -28,15 +28,16 @@ type HtmlReportBuilder struct {
 	translationsJSON                   template.JS
 
 	// Settings derived from context
-	branchCoverageAvailable               bool
-	methodCoverageAvailable               bool
-	maximumDecimalPlacesForCoverageQuotas int
-	parserName                            string
-	reportTimestamp                       int64
-	reportTitle                           string
-	tag                                   string
-	translations                          map[string]string
-	onlySummary                           bool // In C#, this is based on report types. For now, assume false.
+	branchCoverageAvailable                  bool
+	methodCoverageAvailable                  bool
+	maximumDecimalPlacesForCoverageQuotas    int
+	maximumDecimalPlacesForPercentageDisplay int
+	parserName                               string
+	reportTimestamp                          int64
+	reportTitle                              string
+	tag                                      string
+	translations                             map[string]string
+	onlySummary                              bool // In C#, this is based on report types. For now, assume false.
 
 }
 
@@ -124,6 +125,7 @@ func (b *HtmlReportBuilder) initializeBuilderProperties(report *model.SummaryRes
 	b.branchCoverageAvailable = report.BranchesValid != nil && *report.BranchesValid > 0
 	b.methodCoverageAvailable = true // Per original C# behavior
 	b.maximumDecimalPlacesForCoverageQuotas = settings.MaximumDecimalPlacesForCoverageQuotas
+	b.maximumDecimalPlacesForPercentageDisplay = settings.MaximumDecimalPlacesForPercentageDisplay
 	b.translations = GetTranslations()
 	// b.onlySummary determination could be more complex based on ReportTypes in reportConfig
 

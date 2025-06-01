@@ -16,7 +16,6 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
-// ... (generateClassDetailHTML, buildClassViewModelForDetailServer, and other helpers remain the same as previous correct version)
 func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, classReportFilename string, tag string) error {
 	// 1. Build the main ClassViewModelForDetail (server-side rendering focus)
 	classVM := b.buildClassViewModelForDetailServer(classModel, tag)
@@ -38,6 +37,7 @@ func (b *HtmlReportBuilder) generateClassDetailHTML(classModel *model.Class, cla
 	return b.renderClassDetailPage(templateData, classReportFilename)
 
 }
+
 func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model.Class, tag string) ClassViewModelForDetail {
 	cvm := ClassViewModelForDetail{
 		Name:         classModel.DisplayName,
@@ -59,7 +59,7 @@ func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model
 	b.populateHistoricCoveragesForClassVM(&cvm, classModel)
 	b.populateAggregatedMetricsForClassVM(&cvm, classModel)
 
-	var allMethodMetricsForClass []*model.MethodMetric 
+	var allMethodMetricsForClass []*model.MethodMetric
 
 	sortedFiles := make([]model.CodeFile, len(classModel.Files))
 	copy(sortedFiles, classModel.Files)
@@ -68,13 +68,13 @@ func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model
 	})
 
 	for fileIdx, fileInClassValue := range sortedFiles {
-		fileInClass := fileInClassValue 
+		fileInClass := fileInClassValue
 		fileVM, _, err := b.buildFileViewModelForServerRender(&fileInClass)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not build file view model for %s: %v\n", fileInClass.Path, err)
 			continue
 		}
-		cvm.Files = append(cvm.Files, fileVM) 
+		cvm.Files = append(cvm.Files, fileVM)
 
 		for i := range fileInClass.MethodMetrics {
 			allMethodMetricsForClass = append(allMethodMetricsForClass, &fileInClass.MethodMetrics[i])
@@ -88,18 +88,19 @@ func (b *HtmlReportBuilder) buildClassViewModelForDetailServer(classModel *model
 	}
 
 	if len(allMethodMetricsForClass) > 0 {
-		cvm.FilesWithMetrics = true 
+		cvm.FilesWithMetrics = true
 		cvm.MetricsTable = b.buildMetricsTableForClassVM(classModel) // Pass the original classModel
 	}
 
 	return cvm
 }
+
 func (b *HtmlReportBuilder) populateLineCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
-	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas
-	lineCoverage := utils.CalculatePercentage(cvm.CoveredLines, cvm.CoverableLines, decimalPlaces)
-	cvm.CoveragePercentageForDisplay = utils.FormatPercentage(lineCoverage, decimalPlaces)
+	lineCoverage := utils.CalculatePercentage(cvm.CoveredLines, cvm.CoverableLines, b.maximumDecimalPlacesForCoverageQuotas)
+	cvm.CoveragePercentageForDisplay = utils.FormatPercentage(lineCoverage, b.maximumDecimalPlacesForPercentageDisplay)
 
 	if !math.IsNaN(lineCoverage) {
+
 		cvm.CoveragePercentageBarValue = 100 - int(math.Round(lineCoverage))
 		cvm.CoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", cvm.CoveredLines, cvm.CoverableLines)
 	} else {
@@ -107,15 +108,16 @@ func (b *HtmlReportBuilder) populateLineCoverageMetricsForClassVM(cvm *ClassView
 		cvm.CoverageRatioTextForDisplay = "-"
 	}
 }
+
 func (b *HtmlReportBuilder) populateBranchCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
 	if b.branchCoverageAvailable && classModel.BranchesValid != nil && *classModel.BranchesValid > 0 && classModel.BranchesCovered != nil {
 		cvm.CoveredBranches = *classModel.BranchesCovered
 		cvm.TotalBranches = *classModel.BranchesValid
-		decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas
-		branchCoverage := utils.CalculatePercentage(*classModel.BranchesCovered, *classModel.BranchesValid, decimalPlaces)
-		cvm.BranchCoveragePercentageForDisplay = utils.FormatPercentage(branchCoverage, decimalPlaces)
+		branchCoverage := utils.CalculatePercentage(*classModel.BranchesCovered, *classModel.BranchesValid, b.maximumDecimalPlacesForCoverageQuotas)
+		cvm.BranchCoveragePercentageForDisplay = utils.FormatPercentage(branchCoverage, b.maximumDecimalPlacesForPercentageDisplay)
 
 		if !math.IsNaN(branchCoverage) {
+
 			cvm.BranchCoveragePercentageBarValue = 100 - int(math.Round(branchCoverage))
 			cvm.BranchCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", cvm.CoveredBranches, cvm.TotalBranches)
 		} else {
@@ -128,18 +130,23 @@ func (b *HtmlReportBuilder) populateBranchCoverageMetricsForClassVM(cvm *ClassVi
 		cvm.BranchCoverageRatioTextForDisplay = "-"
 	}
 }
+
 func (b *HtmlReportBuilder) populateMethodCoverageMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
 	cvm.TotalMethods = classModel.TotalMethods
 	cvm.CoveredMethods = classModel.CoveredMethods
 	cvm.FullyCoveredMethods = classModel.FullyCoveredMethods
 
 	if cvm.TotalMethods > 0 {
-		methodCov := (float64(cvm.CoveredMethods) / float64(cvm.TotalMethods)) * 100.0
-		fullMethodCovVal := (float64(cvm.FullyCoveredMethods) / float64(cvm.TotalMethods)) * 100.0
-		cvm.MethodCoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", methodCov)
-		cvm.MethodCoveragePercentageBarValue = 100 - int(math.Round(methodCov))
+		// Calculate with configured precision
+		methodCovVal := utils.CalculatePercentage(cvm.CoveredMethods, cvm.TotalMethods, b.maximumDecimalPlacesForCoverageQuotas)
+		fullMethodCovVal := utils.CalculatePercentage(cvm.FullyCoveredMethods, cvm.TotalMethods, b.maximumDecimalPlacesForCoverageQuotas)
+
+		// Format for display with 0 decimal places
+		cvm.MethodCoveragePercentageForDisplay = utils.FormatPercentage(methodCovVal, b.maximumDecimalPlacesForPercentageDisplay)
+		cvm.FullMethodCoveragePercentageForDisplay = utils.FormatPercentage(fullMethodCovVal, b.maximumDecimalPlacesForPercentageDisplay)
+
+		cvm.MethodCoveragePercentageBarValue = 100 - int(math.Round(methodCovVal)) // Bar value should use the calculated value
 		cvm.MethodCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", cvm.CoveredMethods, cvm.TotalMethods)
-		cvm.FullMethodCoveragePercentageForDisplay = fmt.Sprintf("%.1f%%", fullMethodCovVal)
 		cvm.FullMethodCoverageRatioTextForDisplay = fmt.Sprintf("%d of %d", cvm.FullyCoveredMethods, cvm.TotalMethods)
 	} else {
 		cvm.MethodCoveragePercentageForDisplay = "N/A"
@@ -149,6 +156,7 @@ func (b *HtmlReportBuilder) populateMethodCoverageMetricsForClassVM(cvm *ClassVi
 		cvm.FullMethodCoverageRatioTextForDisplay = "-"
 	}
 }
+
 func (b *HtmlReportBuilder) populateHistoricCoveragesForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
 	if classModel.HistoricCoverages == nil {
 		return
@@ -164,12 +172,14 @@ func (b *HtmlReportBuilder) populateHistoricCoveragesForClassVM(cvm *ClassViewMo
 		}
 	}
 }
+
 func (b *HtmlReportBuilder) populateAggregatedMetricsForClassVM(cvm *ClassViewModelForDetail, classModel *model.Class) {
 	cvm.Metrics = make(map[string]float64)
 	for name, val := range classModel.Metrics {
 		cvm.Metrics[name] = val
 	}
 }
+
 func (b *HtmlReportBuilder) buildFileViewModelForServerRender(fileInClass *model.CodeFile) (FileViewModelForDetail, []string, error) {
 	fileVM := FileViewModelForDetail{
 		Path:      fileInClass.Path,
@@ -195,9 +205,10 @@ func (b *HtmlReportBuilder) buildFileViewModelForServerRender(fileInClass *model
 	}
 	return fileVM, sourceLines, nil
 }
+
 func (b *HtmlReportBuilder) buildLineViewModelForServerRender(lineContent string, actualLineNumber int, modelCovLine *model.Line, hasCoverageData bool) LineViewModelForDetail {
 	lineVM := LineViewModelForDetail{LineNumber: actualLineNumber, LineContent: lineContent}
-	dataCoverageMap := map[string]map[string]string{"AllTestMethods": {"VC": "", "LVS": "gray"}} 
+	dataCoverageMap := map[string]map[string]string{"AllTestMethods": {"VC": "", "LVS": "gray"}}
 
 	if hasCoverageData {
 		lineVM.Hits = fmt.Sprintf("%d", modelCovLine.Hits)
@@ -221,7 +232,7 @@ func (b *HtmlReportBuilder) buildLineViewModelForServerRender(lineContent string
 			lineVM.Tooltip = fmt.Sprintf("Not covered (%d visits%s)", modelCovLine.Hits, tooltipBranchRate)
 		case lineVisitStatusPartiallyCovered:
 			lineVM.Tooltip = fmt.Sprintf("Partially covered (%d visits%s)", modelCovLine.Hits, tooltipBranchRate)
-		default: 
+		default:
 			lineVM.Tooltip = "Not coverable"
 		}
 	} else {
@@ -229,15 +240,16 @@ func (b *HtmlReportBuilder) buildLineViewModelForServerRender(lineContent string
 		lineVM.Hits = ""
 		lineVM.Tooltip = "Not coverable"
 	}
-	dataCoverageBytes, _ := json.Marshal(dataCoverageMap) 
+	dataCoverageBytes, _ := json.Marshal(dataCoverageMap)
 	lineVM.DataCoverage = template.JS(dataCoverageBytes)
 	return lineVM
 
 }
+
 func (b *HtmlReportBuilder) buildSidebarElementViewModel(codeElem *model.CodeElement, fileShortPath string, fileIndexPlus1 int, isMultiFile bool) SidebarElementViewModel {
 	sidebarElem := SidebarElementViewModel{
-		Name:          codeElem.Name,    
-		FullName:      codeElem.FullName, 
+		Name:          codeElem.Name,
+		FullName:      codeElem.FullName,
 		FileShortPath: fileShortPath,
 		Line:          codeElem.FirstLine,
 		Icon:          "cube",
@@ -260,8 +272,9 @@ func (b *HtmlReportBuilder) buildSidebarElementViewModel(codeElem *model.CodeEle
 	sidebarElem.CoverageTitle = fmt.Sprintf("%s - %s", coverageTitleText, codeElem.FullName)
 	return sidebarElem
 }
+
 func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinitionViewModel {
-	standardMetricKeys := []string{ 
+	standardMetricKeys := []string{
 		"Branch coverage",
 		"CrapScore",
 		"Cyclomatic complexity",
@@ -271,15 +284,16 @@ func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinition
 	for _, key := range standardMetricKeys {
 		translatedName := b.translations[key]
 		if translatedName == "" {
-			translatedName = key 
+			translatedName = key
 		}
 		headers = append(headers, AngularMetricDefinitionViewModel{
 			Name:           translatedName,
-			ExplanationURL: b.getMetricExplanationURL(key), 
+			ExplanationURL: b.getMetricExplanationURL(key),
 		})
 	}
 	return headers
 }
+
 func findCorrespondingCodeElement(method *model.Method, classModel *model.Class) (*model.CodeElement, string, int) {
 	sortedFiles := make([]model.CodeFile, len(classModel.Files))
 	copy(sortedFiles, classModel.Files)
@@ -287,9 +301,9 @@ func findCorrespondingCodeElement(method *model.Method, classModel *model.Class)
 		return sortedFiles[i].Path < sortedFiles[j].Path
 	})
 	for fIdx, fValue := range sortedFiles {
-		f := fValue 
+		f := fValue
 		for i := range f.CodeElements {
-			ce := &f.CodeElements[i] 
+			ce := &f.CodeElements[i]
 			if ce.FirstLine == method.FirstLine && ce.FullName == method.DisplayName {
 				fileShortPath := utils.ReplaceInvalidPathChars(filepath.Base(f.Path))
 				return ce, fileShortPath, fIdx + 1
@@ -298,6 +312,7 @@ func findCorrespondingCodeElement(method *model.Method, classModel *model.Class)
 	}
 	return nil, "", 0
 }
+
 func (b *HtmlReportBuilder) buildSingleMetricRow(
 	method *model.Method,
 	correspondingCE *model.CodeElement,
@@ -305,7 +320,7 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 	fileIndexPlus1 int,
 	headers []AngularMetricDefinitionViewModel,
 ) AngularMethodMetricsViewModel {
-	var fullNameForTitle string 
+	var fullNameForTitle string
 	var lineToLink int
 	var isProperty bool
 	var coverageQuota *float64
@@ -326,8 +341,8 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 		shortDisplayNameForTable = utils.GetShortMethodName(cleanedFullName)
 	}
 	row := AngularMethodMetricsViewModel{
-		Name:           shortDisplayNameForTable, 
-		FullName:       fullNameForTitle,         
+		Name:           shortDisplayNameForTable,
+		FullName:       fullNameForTitle,
 		FileIndexPlus1: fileIndexPlus1,
 		Line:           lineToLink,
 		FileShortPath:  fileShortPath,
@@ -352,9 +367,9 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 			originalMetricKey = "Cyclomatic complexity"
 		case b.translations["Line coverage"]:
 			originalMetricKey = "Line coverage"
-		default: 
-			originalMetricKey = headerVM.Name 
-			if _, ok := methodMetricsMap[originalMetricKey]; !ok { 
+		default:
+			originalMetricKey = headerVM.Name
+			if _, ok := methodMetricsMap[originalMetricKey]; !ok {
 				for key, translatedVal := range b.translations {
 					if translatedVal == headerVM.Name && (key == "Branch coverage" || key == "CrapScore" || key == "Cyclomatic complexity" || key == "Line coverage" || key == "Complexity") {
 						originalMetricKey = key
@@ -378,7 +393,6 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 	}
 	return row
 }
-
 
 // buildMetricsTableForClassVM constructs the view model for the metrics table.
 // It collects all methods from all files within the class and sorts them
@@ -483,7 +497,7 @@ func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class)
 				break
 			}
 		}
-		
+
 		if correspondingCE == nil && len(mCtx.method.MethodMetrics) > 0 && mCtx.method.MethodMetrics[0].Line == mCtx.method.FirstLine {
 			// Fallback: Create a temporary CodeElement if it's truly missing but metrics exist for the method at its first line.
 			// This situation suggests an inconsistency or a method that exists in metrics but not explicitly in CodeElements.
@@ -491,21 +505,20 @@ func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class)
 			// The CoverageQuota for the method itself might be derived if available.
 			var methCovQuota *float64
 			if !math.IsNaN(mCtx.method.LineRate) {
-				 lrq := mCtx.method.LineRate * 100.0
-				 methCovQuota = &lrq
+				lrq := mCtx.method.LineRate * 100.0
+				methCovQuota = &lrq
 			}
 			correspondingCE = &model.CodeElement{
-				Name: mCtx.method.DisplayName, // Use display name as short name for this fallback
-				FullName: mCtx.method.DisplayName,
-				Type: model.MethodElementType,
-				FirstLine: mCtx.method.FirstLine,
-				LastLine: mCtx.method.LastLine, // Approx
+				Name:          mCtx.method.DisplayName, // Use display name as short name for this fallback
+				FullName:      mCtx.method.DisplayName,
+				Type:          model.MethodElementType,
+				FirstLine:     mCtx.method.FirstLine,
+				LastLine:      mCtx.method.LastLine, // Approx
 				CoverageQuota: methCovQuota,
 			}
 			// This warning is now more specific to metric table generation for a method without a clear CE
 			fmt.Fprintf(os.Stderr, "Metrics Table Warning: Could not find exact CodeElement for method %s (line %d) in class %s for file %s. Using method data as fallback for table row.\n", mCtx.method.DisplayName, mCtx.method.FirstLine, classModel.DisplayName, mCtx.filePath)
 		}
-
 
 		row := b.buildSingleMetricRow(mCtx.method, correspondingCE, mCtx.fileShortPath, mCtx.fileIndexPlus1, metricsTable.Headers)
 		metricsTable.Rows = append(metricsTable.Rows, row)
@@ -513,8 +526,9 @@ func (b *HtmlReportBuilder) buildMetricsTableForClassVM(classModel *model.Class)
 
 	return metricsTable
 }
+
 func (b *HtmlReportBuilder) getMetricExplanationURL(metricKey string) string {
-	switch metricKey { 
+	switch metricKey {
 	case "Cyclomatic complexity", "Complexity":
 		return "https://en.wikipedia.org/wiki/Cyclomatic_complexity"
 	case "CrapScore":
@@ -525,6 +539,7 @@ func (b *HtmlReportBuilder) getMetricExplanationURL(metricKey string) string {
 		return ""
 	}
 }
+
 func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 	if metric.Value == nil {
 		return "-"
@@ -542,18 +557,18 @@ func (b *HtmlReportBuilder) formatMetricValue(metric model.Metric) string {
 	if math.IsInf(valFloat, 0) {
 		return "Inf"
 	}
-	decimalPlaces := b.maximumDecimalPlacesForCoverageQuotas 
 	switch metric.Name {
-	case "Line coverage", "Branch coverage": 
-		return utils.FormatPercentage(valFloat, decimalPlaces)
+	case "Line coverage", "Branch coverage":
+		return utils.FormatPercentage(valFloat, b.maximumDecimalPlacesForPercentageDisplay)
 	case "CrapScore":
 		return fmt.Sprintf("%.2f", valFloat)
 	case "Cyclomatic complexity", "Complexity":
 		return fmt.Sprintf("%.0f", valFloat)
 	default:
-		return fmt.Sprintf(fmt.Sprintf("%%.%df", decimalPlaces), valFloat)
+		return fmt.Sprintf(fmt.Sprintf("%%.%df", b.maximumDecimalPlacesForCoverageQuotas), valFloat)
 	}
 }
+
 func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class, classVMServer *ClassViewModelForDetail) (AngularClassDetailViewModel, error) {
 	angularClassVMForJS := AngularClassViewModel{
 		Name:                  classModel.DisplayName,
@@ -564,10 +579,10 @@ func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class
 		CoveredMethods:        classVMServer.CoveredMethods,
 		FullyCoveredMethods:   classVMServer.FullyCoveredMethods,
 		TotalMethods:          classVMServer.TotalMethods,
-		HistoricCoverages:     classVMServer.HistoricCoverages, 
+		HistoricCoverages:     classVMServer.HistoricCoverages,
 		LineCoverageHistory:   classVMServer.LineCoverageHistory,
 		BranchCoverageHistory: classVMServer.BranchCoverageHistory,
-		Metrics:               classVMServer.Metrics, 
+		Metrics:               classVMServer.Metrics,
 	}
 	if classModel.BranchesCovered != nil {
 		angularClassVMForJS.CoveredBranches = *classModel.BranchesCovered
@@ -589,6 +604,7 @@ func (b *HtmlReportBuilder) buildAngularClassDetailForJS(classModel *model.Class
 	}
 	return detailVM, nil
 }
+
 func (b *HtmlReportBuilder) buildAngularFileViewModelForJS(fileInClass *model.CodeFile) (AngularCodeFileViewModel, error) {
 	angularFile := AngularCodeFileViewModel{
 		Path:           fileInClass.Path,
@@ -600,11 +616,11 @@ func (b *HtmlReportBuilder) buildAngularFileViewModelForJS(fileInClass *model.Co
 	sourceLines, err := filereader.ReadLinesInFile(fileInClass.Path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not read source file %s for JS Angular VM: %v\n", fileInClass.Path, err)
-		return angularFile, nil 
+		return angularFile, nil
 	}
 	coverageLinesMap := make(map[int]*model.Line)
 	if fileInClass.Lines != nil {
-		for i := range fileInClass.Lines { 
+		for i := range fileInClass.Lines {
 			covLine := &fileInClass.Lines[i]
 			coverageLinesMap[covLine.Number] = covLine
 		}
@@ -617,10 +633,11 @@ func (b *HtmlReportBuilder) buildAngularFileViewModelForJS(fileInClass *model.Co
 	}
 	return angularFile, nil
 }
+
 func (b *HtmlReportBuilder) buildAngularLineViewModelForJS(content string, actualLineNumber int, modelCovLine *model.Line, hasCoverageData bool) AngularLineAnalysisViewModel {
 	lineVM := AngularLineAnalysisViewModel{
 		LineNumber:  actualLineNumber,
-		LineContent: content, 
+		LineContent: content,
 	}
 	if hasCoverageData {
 		lineVM.Hits = modelCovLine.Hits
@@ -634,30 +651,30 @@ func (b *HtmlReportBuilder) buildAngularLineViewModelForJS(content string, actua
 }
 
 func (b *HtmlReportBuilder) buildClassDetailPageData(classVM ClassViewModelForDetail, tag string, classDetailJS template.JS) ClassDetailData {
-	appVersion := "0.0.1" 
+	appVersion := "0.0.1"
 	if b.ReportContext.ReportConfiguration() != nil {
 		appVersion = "0.0.1"
 	}
 	return ClassDetailData{
-		ReportTitle:                           b.reportTitle,
-		AppVersion:                            appVersion,
-		CurrentDateTime:                       time.Now().Format("02/01/2006 - 15:04:05"),
-		Class:                                 classVM,
-		BranchCoverageAvailable:               b.branchCoverageAvailable,
-		MethodCoverageAvailable:               b.methodCoverageAvailable,
-		Tag:                                   tag,
-		Translations:                          b.translations,
-		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
-		AngularCssFile:                        b.angularCssFile,
-		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
-		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
-		AngularMainJsFile:                     b.angularMainJsFile,
-		AssembliesJSON:                        b.assembliesJSON,
-		RiskHotspotsJSON:                      b.riskHotspotsJSON,
-		MetricsJSON:                           b.metricsJSON,
-		RiskHotspotMetricsJSON:                b.riskHotspotMetricsJSON,
-		HistoricCoverageExecutionTimesJSON:    b.historicCoverageExecutionTimesJSON,
-		TranslationsJSON:                      b.translationsJSON,
-		ClassDetailJSON:                       classDetailJS,
+		ReportTitle:                              b.reportTitle,
+		AppVersion:                               appVersion,
+		CurrentDateTime:                          time.Now().Format("02/01/2006 - 15:04:05"),
+		Class:                                    classVM,
+		BranchCoverageAvailable:                  b.branchCoverageAvailable,
+		MethodCoverageAvailable:                  b.methodCoverageAvailable,
+		Tag:                                      tag,
+		Translations:                             b.translations,
+		MaximumDecimalPlacesForCoverageQuotas:    b.maximumDecimalPlacesForCoverageQuotas,
+		AngularCssFile:                           b.angularCssFile,
+		AngularRuntimeJsFile:                     b.angularRuntimeJsFile,
+		AngularPolyfillsJsFile:                   b.angularPolyfillsJsFile,
+		AngularMainJsFile:                        b.angularMainJsFile,
+		AssembliesJSON:                           b.assembliesJSON,
+		RiskHotspotsJSON:                         b.riskHotspotsJSON,
+		MetricsJSON:                              b.metricsJSON,
+		RiskHotspotMetricsJSON:                   b.riskHotspotMetricsJSON,
+		HistoricCoverageExecutionTimesJSON:       b.historicCoverageExecutionTimesJSON,
+		TranslationsJSON:                         b.translationsJSON,
+		ClassDetailJSON:                          classDetailJS,
 	}
 }

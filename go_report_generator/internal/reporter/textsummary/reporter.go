@@ -54,6 +54,7 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 	// Assuming decimalPlaces is 1 as per current settings default.
 	// For production, this should come from reportCtx.Settings().MaximumDecimalPlacesForCoverageQuotas
 	decimalPlaces := 1 // Placeholder, should be from settings
+	decimalPlacesForPercentageDisplay := 0 // Placeholder, should be from settings
 
 	sfw.writeLine("Summary")
 	sfw.writeLine("  Generated on: %s", time.Now().Format("02/01/2006 - 15:04:05"))
@@ -84,7 +85,7 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 	sfw.writeLine("  Files: %d", totalFiles)
 
 	overallLineCoverage := utils.CalculatePercentage(summary.LinesCovered, summary.LinesValid, decimalPlaces)
-	sfw.writeLine("  Line coverage: %s", utils.FormatPercentage(overallLineCoverage, decimalPlaces))
+	sfw.writeLine("  Line coverage: %s", utils.FormatPercentage(overallLineCoverage, decimalPlacesForPercentageDisplay))
 	sfw.writeLine("  Covered lines: %d", summary.LinesCovered)
 	sfw.writeLine("  Uncovered lines: %d", summary.LinesValid-summary.LinesCovered)
 	sfw.writeLine("  Coverable lines: %d", summary.LinesValid)
@@ -98,7 +99,7 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 		overallBranchCoverage := utils.CalculatePercentage(*summary.BranchesCovered, *summary.BranchesValid, decimalPlaces)
 		// Only print percentage if there are valid branches (CalculatePercentage returns NaN if total is 0)
 		if *summary.BranchesValid > 0 {
-			sfw.writeLine("  Branch coverage: %s (%d of %d)", utils.FormatPercentage(overallBranchCoverage, decimalPlaces), *summary.BranchesCovered, *summary.BranchesValid)
+			sfw.writeLine("  Branch coverage: %s (%d of %d)", utils.FormatPercentage(overallBranchCoverage, decimalPlacesForPercentageDisplay), *summary.BranchesCovered, *summary.BranchesValid)
 		} else { // No valid branches, just print counts or N/A for percentage
 			sfw.writeLine("  Branch coverage: N/A (%d of %d)", *summary.BranchesCovered, *summary.BranchesValid)
 		}
@@ -118,8 +119,8 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 	methodCoverage := utils.CalculatePercentage(coveredMethodsAgg, totalMethodsAgg, decimalPlaces)
 	fullMethodCoverage := utils.CalculatePercentage(fullyCoveredMethodsAgg, totalMethodsAgg, decimalPlaces)
 
-	sfw.writeLine("  Method coverage: %s (%d of %d)", utils.FormatPercentage(methodCoverage, decimalPlaces), coveredMethodsAgg, totalMethodsAgg)
-	sfw.writeLine("  Full method coverage: %s (%d of %d)", utils.FormatPercentage(fullMethodCoverage, decimalPlaces), fullyCoveredMethodsAgg, totalMethodsAgg)
+	sfw.writeLine("  Method coverage: %s (%d of %d)", utils.FormatPercentage(methodCoverage, decimalPlacesForPercentageDisplay), coveredMethodsAgg, totalMethodsAgg)
+	sfw.writeLine("  Full method coverage: %s (%d of %d)", utils.FormatPercentage(fullMethodCoverage, decimalPlacesForPercentageDisplay), fullyCoveredMethodsAgg, totalMethodsAgg)
 	sfw.writeLine("  Covered methods: %d", coveredMethodsAgg)
 	sfw.writeLine("  Fully covered methods: %d", fullyCoveredMethodsAgg)
 	sfw.writeLine("  Total methods: %d", totalMethodsAgg)
@@ -129,7 +130,7 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 	for _, assembly := range summary.Assemblies {
 		fmt.Fprintln(tw)
 		assemblyLineCoverage := utils.CalculatePercentage(assembly.LinesCovered, assembly.LinesValid, decimalPlaces)
-		fmt.Fprintf(tw, "%s\t  %s\n", assembly.Name, utils.FormatPercentage(assemblyLineCoverage, decimalPlaces))
+		fmt.Fprintf(tw, "%s\t  %s\n", assembly.Name, utils.FormatPercentage(assemblyLineCoverage, decimalPlacesForPercentageDisplay))
 
 		sortedClasses := make([]model.Class, len(assembly.Classes))
 		copy(sortedClasses, assembly.Classes)
@@ -138,7 +139,7 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 		})
 		for _, class := range sortedClasses {
 			classLineCoverage := utils.CalculatePercentage(class.LinesCovered, class.LinesValid, decimalPlaces)
-			fmt.Fprintf(tw, "  %s\t  %s\n", class.DisplayName, utils.FormatPercentage(classLineCoverage, decimalPlaces))
+			fmt.Fprintf(tw, "  %s\t  %s\n", class.DisplayName, utils.FormatPercentage(classLineCoverage, decimalPlacesForPercentageDisplay))
 		}
 	}
 	return nil
