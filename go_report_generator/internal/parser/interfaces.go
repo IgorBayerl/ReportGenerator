@@ -8,14 +8,13 @@ import (
 )
 
 type ParserResult struct {
-	Assemblies           []model.Assembly
-	SourceDirectories    []string
+	Assemblies             []model.Assembly
+	SourceDirectories      []string
 	SupportsBranchCoverage bool
-	ParserName           string
-	MinimumTimeStamp     *time.Time
-	MaximumTimeStamp     *time.Time
+	ParserName             string
+	MinimumTimeStamp       *time.Time
+	MaximumTimeStamp       *time.Time
 }
-
 
 // IParser defines the contract for all coverage report parsers.
 type IParser interface {

@@ -59,7 +59,6 @@ func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 	return false
 }
 
-
 // Parse processes the Cobertura XML file and transforms it into a common ParserResult.
 // Now accepts IReportContext instead of IReportConfiguration.
 func (cp *CoberturaParser) Parse(filePath string, context reporting.IReportContext) (*parser.ParserResult, error) {
@@ -86,7 +85,7 @@ func (cp *CoberturaParser) Parse(filePath string, context reporting.IReportConte
 			continue
 		}
 		if assembly != nil { // Ensure assembly is not nil if filter excluded it
-		    parsedAssemblies = append(parsedAssemblies, *assembly)
+			parsedAssemblies = append(parsedAssemblies, *assembly)
 		}
 	}
 
@@ -100,12 +99,12 @@ func (cp *CoberturaParser) Parse(filePath string, context reporting.IReportConte
 	}
 
 	return &parser.ParserResult{
-		Assemblies:           parsedAssemblies,
-		SourceDirectories:    sourceDirsFromXML,
+		Assemblies:             parsedAssemblies,
+		SourceDirectories:      sourceDirsFromXML,
 		SupportsBranchCoverage: true,
-		ParserName:           cp.Name(),
-		MinimumTimeStamp:     timestamp,
-		MaximumTimeStamp:     timestamp,
+		ParserName:             cp.Name(),
+		MinimumTimeStamp:       timestamp,
+		MaximumTimeStamp:       timestamp,
 	}, nil
 }
 

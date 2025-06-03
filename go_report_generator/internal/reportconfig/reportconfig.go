@@ -16,9 +16,9 @@ type IReportConfiguration interface {
 	HistoryDirectory() string
 	ReportTypes() []string
 	Plugins() []string
-	AssemblyFilters() filtering.IFilter // Changed from []string
-	ClassFilters() filtering.IFilter    // Changed from []string
-	FileFilters() filtering.IFilter       // Changed from []string
+	AssemblyFilters() filtering.IFilter            // Changed from []string
+	ClassFilters() filtering.IFilter               // Changed from []string
+	FileFilters() filtering.IFilter                // Changed from []string
 	RiskHotspotAssemblyFilters() filtering.IFilter // Changed from []string
 	RiskHotspotClassFilters() filtering.IFilter    // Changed from []string
 	VerbosityLevel() logging.VerbosityLevel
@@ -49,28 +49,32 @@ type ReportConfiguration struct {
 	CfgLicense                    string
 	InvalidPatterns               []string
 	VLevelValid                   bool
-	App                       *settings.Settings // Added
+	App                           *settings.Settings // Added
 }
 
 // Implement IReportConfiguration methods
-func (rc *ReportConfiguration) ReportFiles() []string                        { return rc.RFiles }
-func (rc *ReportConfiguration) TargetDirectory() string                      { return rc.TDirectory }
-func (rc *ReportConfiguration) SourceDirectories() []string                  { return rc.SDirectories }
-func (rc *ReportConfiguration) HistoryDirectory() string                     { return rc.HDirectory }
-func (rc *ReportConfiguration) ReportTypes() []string                        { return rc.RTypes }
-func (rc *ReportConfiguration) Plugins() []string                            { return rc.PluginsList }
-func (rc *ReportConfiguration) AssemblyFilters() filtering.IFilter         { return rc.AssemblyFilterInstance }
-func (rc *ReportConfiguration) ClassFilters() filtering.IFilter            { return rc.ClassFilterInstance }
-func (rc *ReportConfiguration) FileFilters() filtering.IFilter               { return rc.FileFilterInstance }
-func (rc *ReportConfiguration) RiskHotspotAssemblyFilters() filtering.IFilter { return rc.RiskHotspotAssemblyFilterInst }
-func (rc *ReportConfiguration) RiskHotspotClassFilters() filtering.IFilter    { return rc.RiskHotspotClassFilterInst }
-func (rc *ReportConfiguration) VerbosityLevel() logging.VerbosityLevel         { return rc.VLevel }
-func (rc *ReportConfiguration) Tag() string                                    { return rc.CfgTag }
-func (rc *ReportConfiguration) Title() string                                  { return rc.CfgTitle }
-func (rc *ReportConfiguration) License() string                                { return rc.CfgLicense }
-func (rc *ReportConfiguration) InvalidReportFilePatterns() []string            { return rc.InvalidPatterns }
-func (rc *ReportConfiguration) IsVerbosityLevelValid() bool                    { return rc.VLevelValid }
-func (rc *ReportConfiguration) Settings() *settings.Settings                   { return rc.App } // Added
+func (rc *ReportConfiguration) ReportFiles() []string              { return rc.RFiles }
+func (rc *ReportConfiguration) TargetDirectory() string            { return rc.TDirectory }
+func (rc *ReportConfiguration) SourceDirectories() []string        { return rc.SDirectories }
+func (rc *ReportConfiguration) HistoryDirectory() string           { return rc.HDirectory }
+func (rc *ReportConfiguration) ReportTypes() []string              { return rc.RTypes }
+func (rc *ReportConfiguration) Plugins() []string                  { return rc.PluginsList }
+func (rc *ReportConfiguration) AssemblyFilters() filtering.IFilter { return rc.AssemblyFilterInstance }
+func (rc *ReportConfiguration) ClassFilters() filtering.IFilter    { return rc.ClassFilterInstance }
+func (rc *ReportConfiguration) FileFilters() filtering.IFilter     { return rc.FileFilterInstance }
+func (rc *ReportConfiguration) RiskHotspotAssemblyFilters() filtering.IFilter {
+	return rc.RiskHotspotAssemblyFilterInst
+}
+func (rc *ReportConfiguration) RiskHotspotClassFilters() filtering.IFilter {
+	return rc.RiskHotspotClassFilterInst
+}
+func (rc *ReportConfiguration) VerbosityLevel() logging.VerbosityLevel { return rc.VLevel }
+func (rc *ReportConfiguration) Tag() string                            { return rc.CfgTag }
+func (rc *ReportConfiguration) Title() string                          { return rc.CfgTitle }
+func (rc *ReportConfiguration) License() string                        { return rc.CfgLicense }
+func (rc *ReportConfiguration) InvalidReportFilePatterns() []string    { return rc.InvalidPatterns }
+func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return rc.VLevelValid }
+func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App } // Added
 
 // NewReportConfiguration is a constructor for ReportConfiguration.
 func NewReportConfiguration(
@@ -135,7 +139,7 @@ func NewReportConfiguration(
 		FileFilterInstance:            fileFilter,
 		RiskHotspotAssemblyFilterInst: rhAssemblyFilter,
 		RiskHotspotClassFilterInst:    rhClassFilter,
-		PluginsList:                   []string{}, // Initialize if not passed
-		App:                       appSettings,    // Store settings
+		PluginsList:                   []string{},  // Initialize if not passed
+		App:                           appSettings, // Store settings
 	}, nil
 }

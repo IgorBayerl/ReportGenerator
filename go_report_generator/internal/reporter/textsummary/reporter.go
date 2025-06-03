@@ -53,7 +53,7 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 	sfw := &summaryFileWriter{f: f}
 	// Assuming decimalPlaces is 1 as per current settings default.
 	// For production, this should come from reportCtx.Settings().MaximumDecimalPlacesForCoverageQuotas
-	decimalPlaces := 1 // Placeholder, should be from settings
+	decimalPlaces := 1                     // Placeholder, should be from settings
 	decimalPlacesForPercentageDisplay := 0 // Placeholder, should be from settings
 
 	sfw.writeLine("Summary")

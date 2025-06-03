@@ -128,7 +128,7 @@ func (cp *CoberturaParser) processCoberturaPackageXML(
 }
 
 func (cp *CoberturaParser) processCoberturaClassGroup(
-	classXMLs []inputxml.ClassXML,
+	classXMLs []inputxml.ClassXML, // All XML <class> elements for the same logical class name
 	assemblyName string,
 	sourceDirs []string,
 	uniqueFilePathsForGrandTotalLines map[string]int,
@@ -142,7 +142,6 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 	settings := context.Settings()
 
 	logicalName := cp.logicalClassNameCobertura(classXMLs[0].Name, settings.RawMode)
-	// Corrected filter usage
 	if !config.ClassFilters().IsElementIncludedInReport(logicalName) {
 		return nil, nil
 	}
@@ -155,73 +154,240 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 		Methods:     []model.Method{},
 		Metrics:     make(map[string]float64),
 	}
-	classProcessedFilePaths := make(map[string]struct{})
+	classProcessedFilePaths := make(map[string]struct{}) // Tracks files processed for *this* class's TotalLines
 	var totalClassBranchesCovered, totalClassBranchesValid int
 	hasClassBranchData := false
 
+	var allMethodsForClassAcrossFiles []model.Method // Collect all methods for the *entire class* here
+
+	// Group inputxml.ClassXML elements by their Filename attribute
+	xmlFragmentsByFile := make(map[string][]inputxml.ClassXML)
 	for _, classXML := range classXMLs {
 		if classXML.Filename == "" {
 			continue
 		}
-		// Corrected filter usage
 		if !config.FileFilters().IsElementIncludedInReport(classXML.Filename) {
 			continue
 		}
+		xmlFragmentsByFile[classXML.Filename] = append(xmlFragmentsByFile[classXML.Filename], classXML)
+	}
 
-		codeFile, fragmentMetrics, err := cp.processCoberturaCodeFileFragment(classXML, sourceDirs, uniqueFilePathsForGrandTotalLines, context)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: error processing code file fragment for '%s' in class '%s': %v\n", classXML.Filename, logicalName, err)
-			continue
+	// For each unique physical file path this class touches:
+	for filePath, fragmentsForFile := range xmlFragmentsByFile {
+		currentCodeFile := model.CodeFile{
+			Path:          filePath, // Initial path, will be resolved
+			MethodMetrics: []model.MethodMetric{},
+			CodeElements:  []model.CodeElement{},
 		}
-		if codeFile != nil {
-			classModel.Files = append(classModel.Files, *codeFile)
-			assemblyProcessedFilePaths[codeFile.Path] = struct{}{}
-			classProcessedFilePaths[codeFile.Path] = struct{}{}
-		}
+		var sourceLinesForFile []string
+		var allCodeElementsForFileFragment []model.CodeElement // Collect CodeElements for this specific file fragment
 
-		classModel.LinesCovered += fragmentMetrics.linesCovered
-		classModel.LinesValid += fragmentMetrics.linesValid
-		if fragmentMetrics.branchesValid > 0 || fragmentMetrics.branchesCovered > 0 {
-			hasClassBranchData = true
-			totalClassBranchesCovered += fragmentMetrics.branchesCovered
-			totalClassBranchesValid += fragmentMetrics.branchesValid
-		}
-
-		var classFragmentSourceLines []string
-		if classXML.Filename != "" {
-			resolvedPath, findErr := utils.FindFileInSourceDirs(classXML.Filename, sourceDirs)
-			if findErr == nil {
-				sLines, readErr := filereader.ReadLinesInFile(resolvedPath)
-				if readErr == nil {
-					classFragmentSourceLines = sLines
-				} else {
-					classFragmentSourceLines = []string{}
+		resolvedPath, err := utils.FindFileInSourceDirs(filePath, sourceDirs)
+		if err == nil {
+			currentCodeFile.Path = resolvedPath
+			sLines, readErr := filereader.ReadLinesInFile(resolvedPath)
+			if readErr == nil {
+				sourceLinesForFile = sLines
+			}
+			if _, known := uniqueFilePathsForGrandTotalLines[resolvedPath]; !known {
+				if n, ferr := filereader.CountLinesInFile(resolvedPath); ferr == nil {
+					uniqueFilePathsForGrandTotalLines[resolvedPath] = n
+				} else if readErr == nil {
+					uniqueFilePathsForGrandTotalLines[resolvedPath] = len(sourceLinesForFile)
 				}
-			} else {
-				classFragmentSourceLines = []string{}
+			}
+			if lineCount, ok := uniqueFilePathsForGrandTotalLines[resolvedPath]; ok {
+				currentCodeFile.TotalLines = lineCount
 			}
 		} else {
-			classFragmentSourceLines = []string{}
+			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: source file '%s' for class '%s' not found. Line content will be missing.\n", filePath, logicalName)
 		}
 
-		for _, methodXML := range classXML.Methods.Method {
-			method, err := cp.processCoberturaMethodXML(methodXML, classFragmentSourceLines, classXML.Name, context)
-			if err != nil {
-				continue
+		maxLineNumInFile := 0
+		for _, fragment := range fragmentsForFile {
+			for _, lineXML := range fragment.Lines.Line {
+				ln := cp.parseInt(lineXML.Number)
+				if ln > maxLineNumInFile {
+					maxLineNumInFile = ln
+				}
 			}
-			classModel.Methods = append(classModel.Methods, *method)
+			for _, methodXML := range fragment.Methods.Method {
+				for _, lineXML := range methodXML.Lines.Line {
+					ln := cp.parseInt(lineXML.Number)
+					if ln > maxLineNumInFile {
+						maxLineNumInFile = ln
+					}
+				}
+			}
 		}
-	}
+
+		mergedLineHits := make([]int, maxLineNumInFile+1)
+		for i := range mergedLineHits {
+			mergedLineHits[i] = -1
+		}
+		mergedBranches := make(map[int][]model.BranchCoverageDetail)
+
+		for _, fragment := range fragmentsForFile {
+			for _, lineXML := range fragment.Lines.Line {
+				lineModel, _ := cp.processCoberturaLineXML(lineXML, sourceLinesForFile)
+				lineNumber := lineModel.Number
+				if lineNumber <= 0 || lineNumber > maxLineNumInFile {
+					continue
+				}
+				if mergedLineHits[lineNumber] < 0 {
+					mergedLineHits[lineNumber] = lineModel.Hits
+				} else if lineModel.Hits > 0 {
+					mergedLineHits[lineNumber] += lineModel.Hits
+				} else if lineModel.Hits == 0 && mergedLineHits[lineNumber] == -1 { // if no data yet, and this fragment reports 0 hits for a coverable line
+					mergedLineHits[lineNumber] = 0
+				}
+
+				if lineModel.IsBranchPoint {
+					currentBranches, _ := mergedBranches[lineNumber]
+					for _, newBranch := range lineModel.Branch {
+						found := false
+						for idx, existingBranch := range currentBranches {
+							if existingBranch.Identifier == newBranch.Identifier {
+								currentBranches[idx].Visits += newBranch.Visits
+								found = true
+								break
+							}
+						}
+						if !found {
+							currentBranches = append(currentBranches, newBranch)
+						}
+					}
+					mergedBranches[lineNumber] = currentBranches
+				}
+			}
+
+			for _, methodXML := range fragment.Methods.Method {
+				methodModel, mErr := cp.processCoberturaMethodXML(methodXML, sourceLinesForFile, fragment.Name, context)
+				if mErr != nil {
+					continue
+				}
+				allMethodsForClassAcrossFiles = append(allMethodsForClassAcrossFiles, *methodModel)
+
+				if methodModel.MethodMetrics != nil {
+					currentCodeFile.MethodMetrics = append(currentCodeFile.MethodMetrics, methodModel.MethodMetrics...)
+				}
+
+				elementType := model.MethodElementType
+				cleanedFullNameForElement := methodModel.DisplayName
+				if strings.HasPrefix(cleanedFullNameForElement, "get_") || strings.HasPrefix(cleanedFullNameForElement, "set_") {
+					elementType = model.PropertyElementType
+				}
+				var coverageQuotaForElement *float64
+				if len(methodModel.Lines) > 0 && !math.IsNaN(methodModel.LineRate) && !math.IsInf(methodModel.LineRate, 0) {
+					cq := methodModel.LineRate * 100.0
+					coverageQuotaForElement = &cq
+				}
+				var shortNameForElement string
+				if elementType == model.PropertyElementType {
+					shortNameForElement = cleanedFullNameForElement
+				} else {
+					shortNameForElement = utils.GetShortMethodName(cleanedFullNameForElement)
+				}
+				codeElem := model.CodeElement{
+					Name:          shortNameForElement,
+					FullName:      cleanedFullNameForElement,
+					Type:          elementType,
+					FirstLine:     methodModel.FirstLine,
+					LastLine:      methodModel.LastLine,
+					CoverageQuota: coverageQuotaForElement,
+				}
+				allCodeElementsForFileFragment = append(allCodeElementsForFileFragment, codeElem)
+			}
+		}
+
+		var finalLinesForFile []model.Line
+		var fileCoveredLines, fileCoverableLines, fileBranchesCovered, fileBranchesValid int
+		for lineNum := 1; lineNum <= maxLineNumInFile; lineNum++ {
+			lineContent := ""
+			if lineNum > 0 && lineNum <= len(sourceLinesForFile) {
+				lineContent = sourceLinesForFile[lineNum-1]
+			}
+			currentLine := model.Line{
+				Number:                   lineNum,
+				Hits:                     mergedLineHits[lineNum],
+				Content:                  lineContent,
+				LineCoverageByTestMethod: make(map[string]int),
+			}
+			if branches, ok := mergedBranches[lineNum]; ok && len(branches) > 0 {
+				currentLine.IsBranchPoint = true
+				currentLine.Branch = branches
+				for _, b := range branches {
+					if b.Visits > 0 {
+						currentLine.CoveredBranches++
+					}
+					currentLine.TotalBranches++
+				}
+			}
+
+			if currentLine.Hits < 0 {
+				currentLine.LineVisitStatus = model.NotCoverable
+			} else if currentLine.IsBranchPoint {
+				if currentLine.TotalBranches == 0 {
+					currentLine.LineVisitStatus = model.NotCoverable // Or Covered if hits > 0 but no branches? C# logic is complex here. Defaulting to NotCoverable.
+				} else if currentLine.CoveredBranches == currentLine.TotalBranches {
+					currentLine.LineVisitStatus = model.Covered
+				} else if currentLine.CoveredBranches > 0 {
+					currentLine.LineVisitStatus = model.PartiallyCovered
+				} else {
+					currentLine.LineVisitStatus = model.NotCovered
+				}
+			} else if currentLine.Hits > 0 {
+				currentLine.LineVisitStatus = model.Covered
+			} else {
+				currentLine.LineVisitStatus = model.NotCovered
+			}
+
+			finalLinesForFile = append(finalLinesForFile, currentLine)
+			if currentLine.Hits >= 0 {
+				fileCoverableLines++
+				if currentLine.Hits > 0 {
+					fileCoveredLines++
+				}
+			}
+			fileBranchesCovered += currentLine.CoveredBranches
+			fileBranchesValid += currentLine.TotalBranches
+		}
+		currentCodeFile.Lines = finalLinesForFile
+		currentCodeFile.CoveredLines = fileCoveredLines
+		currentCodeFile.CoverableLines = fileCoverableLines
+
+		// Deduplicate MethodMetrics and CodeElements at the file level
+		currentCodeFile.MethodMetrics = utils.DistinctBy(currentCodeFile.MethodMetrics, func(mm model.MethodMetric) string { return mm.Name + fmt.Sprintf("_%d", mm.Line) })
+		currentCodeFile.CodeElements = utils.DistinctBy(allCodeElementsForFileFragment, func(ce model.CodeElement) string { return ce.FullName + fmt.Sprintf("_%d", ce.FirstLine) })
+		utils.SortByLineAndName(currentCodeFile.CodeElements)
+
+		classModel.Files = append(classModel.Files, currentCodeFile)
+		assemblyProcessedFilePaths[currentCodeFile.Path] = struct{}{}
+		classProcessedFilePaths[currentCodeFile.Path] = struct{}{}
+
+		classModel.LinesCovered += fileCoveredLines
+		classModel.LinesValid += fileCoverableLines
+		if fileBranchesValid > 0 || fileBranchesCovered > 0 {
+			hasClassBranchData = true
+			totalClassBranchesCovered += fileBranchesCovered
+			totalClassBranchesValid += fileBranchesValid
+		}
+	} // End loop over distinct file paths for the class
 
 	if hasClassBranchData {
 		classModel.BranchesCovered = &totalClassBranchesCovered
 		classModel.BranchesValid = &totalClassBranchesValid
 	}
+
 	for path := range classProcessedFilePaths {
 		if lineCount, ok := uniqueFilePathsForGrandTotalLines[path]; ok {
 			classModel.TotalLines += lineCount
 		}
 	}
+
+	classModel.Methods = utils.DistinctBy(allMethodsForClassAcrossFiles, func(m model.Method) string { return m.DisplayName + fmt.Sprintf("_%d", m.FirstLine) })
+	utils.SortByLineAndName(classModel.Methods)
+
 	var coveredM, fullyCoveredM, totalM int
 	if classModel.Methods != nil {
 		totalM = len(classModel.Methods)
@@ -229,15 +395,15 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 			methodHasCoverableLines := false
 			methodIsFullyCovered := true
 			if len(method.Lines) == 0 {
-				methodIsFullyCovered = false
+				methodIsFullyCovered = false // A method with no lines (e.g. abstract or interface) isn't "fully covered" by execution
 			} else {
 				atLeastOneLineCoveredInMethod := false
 				for _, line := range method.Lines {
-					if line.Hits >= 0 {
+					if line.Hits >= 0 { // Line is coverable
 						methodHasCoverableLines = true
 						if line.Hits > 0 {
 							atLeastOneLineCoveredInMethod = true
-						} else {
+						} else { // Coverable line but 0 hits
 							methodIsFullyCovered = false
 						}
 					}
@@ -245,12 +411,15 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 				if atLeastOneLineCoveredInMethod {
 					coveredM++
 				}
-				if !methodHasCoverableLines {
-					methodIsFullyCovered = false
+				if !methodHasCoverableLines && totalM > 0 { // If method had lines but none were coverable (e.g. all comments)
+					methodIsFullyCovered = false // Or true, depending on definition. C# treats methods with no coverable lines as fully covered if they have 0 lines.
+					// If method.Lines is empty, it's already false. If method.Lines has non-coverable lines, it's not fully covered by execution.
 				}
 			}
-			if methodIsFullyCovered {
+			if methodIsFullyCovered && methodHasCoverableLines { // Only count as fully covered if it actually had coverable lines and all were hit
 				fullyCoveredM++
+			} else if !methodHasCoverableLines && len(method.Lines) == 0 { // Method has no lines at all (e.g. abstract)
+				fullyCoveredM++ // Consider this fully covered by ReportGenerator standard
 			}
 		}
 	}
@@ -260,17 +429,18 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 
 	if classModel.Methods != nil {
 		for _, method := range classModel.Methods {
+			if !math.IsNaN(method.Complexity) && !math.IsInf(method.Complexity, 0) {
+				classModel.Metrics["Cyclomatic complexity"] += method.Complexity
+			}
 			if method.MethodMetrics != nil {
 				for _, methodMetric := range method.MethodMetrics {
-					if methodMetric.Metrics != nil {
-						for _, metric := range methodMetric.Metrics {
-							if metric.Name == "" {
-								continue
-							}
-							if valFloat, ok := metric.Value.(float64); ok {
-								if !math.IsNaN(valFloat) && !math.IsInf(valFloat, 0) {
-									classModel.Metrics[metric.Name] += valFloat
-								}
+					for _, metric := range methodMetric.Metrics {
+						if metric.Name == "" || metric.Name == "Cyclomatic complexity" {
+							continue
+						}
+						if valFloat, ok := metric.Value.(float64); ok {
+							if !math.IsNaN(valFloat) && !math.IsInf(valFloat, 0) {
+								classModel.Metrics[metric.Name] += valFloat
 							}
 						}
 					}

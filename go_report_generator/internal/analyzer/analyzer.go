@@ -76,43 +76,43 @@ func MergeParserResults(results []*parser.ParserResult, config reportconfig.IRep
 		for _, asmFromParser := range res.Assemblies {
 			asmCopy := asmFromParser // Work with a copy to avoid modifying original parser result data
 			if existingAsm, ok := mergedAssembliesMap[asmCopy.Name]; ok {
-                // Instead of just appending classes, also sum up the simple stats.
-                // This is still not a full deep merge but better than current.
-                existingAsm.LinesCovered += asmCopy.LinesCovered
-                existingAsm.LinesValid += asmCopy.LinesValid // This might overcount if same lines are in both
-                // Consider making LinesValid a calculation based on unique lines after merging.
+				// Instead of just appending classes, also sum up the simple stats.
+				// This is still not a full deep merge but better than current.
+				existingAsm.LinesCovered += asmCopy.LinesCovered
+				existingAsm.LinesValid += asmCopy.LinesValid // This might overcount if same lines are in both
+				// Consider making LinesValid a calculation based on unique lines after merging.
 
-                if asmCopy.BranchesCovered != nil {
-                    if existingAsm.BranchesCovered == nil {
-                        bc := *asmCopy.BranchesCovered
-                        existingAsm.BranchesCovered = &bc
-                    } else {
-                        *existingAsm.BranchesCovered += *asmCopy.BranchesCovered
-                    }
-                }
-                if asmCopy.BranchesValid != nil {
-                    if existingAsm.BranchesValid == nil {
-                        bv := *asmCopy.BranchesValid
-                        existingAsm.BranchesValid = &bv
-                    } else {
-                        // This logic for TotalBranches/LinesValid needs to be careful
-                        // not to double-count if the underlying entities (lines with branches)
-                        // are the same but reported in multiple files. A true deep merge
-                        // handles this by merging at the line level.
-                        // For a simple sum, this might lead to inflated TotalBranches if not careful.
-                        // A safer bet if deep merge isn't done is to just use stats from the first file,
-                        // which is what it implicitly does now for the assembly stats, and accept undercounting.
-                        // OR, ensure the Cobertura files being merged do not have overlapping assembly/class/file definitions.
-                        *existingAsm.BranchesValid += *asmCopy.BranchesValid
-                    }
-                }
-                
-                // TODO: Still need to handle merging of classes, files, lines properly for detailed views.
-                // For now, appending classes will lead to duplicates if the same class is in multiple reports for this assembly.
-                existingAsm.Classes = append(existingAsm.Classes, asmCopy.Classes...)
-            } else {
-                mergedAssembliesMap[asmCopy.Name] = &asmCopy
-            }
+				if asmCopy.BranchesCovered != nil {
+					if existingAsm.BranchesCovered == nil {
+						bc := *asmCopy.BranchesCovered
+						existingAsm.BranchesCovered = &bc
+					} else {
+						*existingAsm.BranchesCovered += *asmCopy.BranchesCovered
+					}
+				}
+				if asmCopy.BranchesValid != nil {
+					if existingAsm.BranchesValid == nil {
+						bv := *asmCopy.BranchesValid
+						existingAsm.BranchesValid = &bv
+					} else {
+						// This logic for TotalBranches/LinesValid needs to be careful
+						// not to double-count if the underlying entities (lines with branches)
+						// are the same but reported in multiple files. A true deep merge
+						// handles this by merging at the line level.
+						// For a simple sum, this might lead to inflated TotalBranches if not careful.
+						// A safer bet if deep merge isn't done is to just use stats from the first file,
+						// which is what it implicitly does now for the assembly stats, and accept undercounting.
+						// OR, ensure the Cobertura files being merged do not have overlapping assembly/class/file definitions.
+						*existingAsm.BranchesValid += *asmCopy.BranchesValid
+					}
+				}
+
+				// TODO: Still need to handle merging of classes, files, lines properly for detailed views.
+				// For now, appending classes will lead to duplicates if the same class is in multiple reports for this assembly.
+				existingAsm.Classes = append(existingAsm.Classes, asmCopy.Classes...)
+			} else {
+				mergedAssembliesMap[asmCopy.Name] = &asmCopy
+			}
 		}
 	}
 

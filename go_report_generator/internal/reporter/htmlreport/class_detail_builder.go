@@ -643,9 +643,9 @@ func (b *HtmlReportBuilder) buildAngularLineViewModelForJS(content string, actua
 		lineVM.Hits = modelCovLine.Hits
 		lineVM.CoveredBranches = modelCovLine.CoveredBranches
 		lineVM.TotalBranches = modelCovLine.TotalBranches
-		lineVM.LineVisitStatus = lineVisitStatusToString(determineLineVisitStatus(modelCovLine.Hits, modelCovLine.IsBranchPoint, modelCovLine.CoveredBranches, modelCovLine.TotalBranches))
+		lineVM.LineVisitStatus = lineVisitStatusToString(modelCovLine.LineVisitStatus) // Use the field here
 	} else {
-		lineVM.LineVisitStatus = lineVisitStatusToString(lineVisitStatusNotCoverable)
+		lineVM.LineVisitStatus = lineVisitStatusToString(model.NotCoverable) // Use model.NotCoverable
 	}
 	return lineVM
 }
@@ -656,25 +656,25 @@ func (b *HtmlReportBuilder) buildClassDetailPageData(classVM ClassViewModelForDe
 		appVersion = "0.0.1"
 	}
 	return ClassDetailData{
-		ReportTitle:                              b.reportTitle,
-		AppVersion:                               appVersion,
-		CurrentDateTime:                          time.Now().Format("02/01/2006 - 15:04:05"),
-		Class:                                    classVM,
-		BranchCoverageAvailable:                  b.branchCoverageAvailable,
-		MethodCoverageAvailable:                  b.methodCoverageAvailable,
-		Tag:                                      tag,
-		Translations:                             b.translations,
-		MaximumDecimalPlacesForCoverageQuotas:    b.maximumDecimalPlacesForCoverageQuotas,
-		AngularCssFile:                           b.angularCssFile,
-		AngularRuntimeJsFile:                     b.angularRuntimeJsFile,
-		AngularPolyfillsJsFile:                   b.angularPolyfillsJsFile,
-		AngularMainJsFile:                        b.angularMainJsFile,
-		AssembliesJSON:                           b.assembliesJSON,
-		RiskHotspotsJSON:                         b.riskHotspotsJSON,
-		MetricsJSON:                              b.metricsJSON,
-		RiskHotspotMetricsJSON:                   b.riskHotspotMetricsJSON,
-		HistoricCoverageExecutionTimesJSON:       b.historicCoverageExecutionTimesJSON,
-		TranslationsJSON:                         b.translationsJSON,
-		ClassDetailJSON:                          classDetailJS,
+		ReportTitle:                           b.reportTitle,
+		AppVersion:                            appVersion,
+		CurrentDateTime:                       time.Now().Format("02/01/2006 - 15:04:05"),
+		Class:                                 classVM,
+		BranchCoverageAvailable:               b.branchCoverageAvailable,
+		MethodCoverageAvailable:               b.methodCoverageAvailable,
+		Tag:                                   tag,
+		Translations:                          b.translations,
+		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
+		AngularCssFile:                        b.angularCssFile,
+		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
+		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
+		AngularMainJsFile:                     b.angularMainJsFile,
+		AssembliesJSON:                        b.assembliesJSON,
+		RiskHotspotsJSON:                      b.riskHotspotsJSON,
+		MetricsJSON:                           b.metricsJSON,
+		RiskHotspotMetricsJSON:                b.riskHotspotMetricsJSON,
+		HistoricCoverageExecutionTimesJSON:    b.historicCoverageExecutionTimesJSON,
+		TranslationsJSON:                      b.translationsJSON,
+		ClassDetailJSON:                       classDetailJS,
 	}
 }

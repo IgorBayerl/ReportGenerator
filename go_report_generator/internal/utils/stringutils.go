@@ -93,7 +93,7 @@ func FilterToRegex(filterPattern string) (*regexp.Regexp, bool, error) {
 	// C# original: filter = filter.Replace("*", "$$$*"); ... filter = Regex.Escape(filter); filter = filter.Replace(@"\$\$\$\*", ".*");
 	// Go: QuoteMeta escapes '*', so we replace `\*` with `.*`
 	pattern = strings.ReplaceAll(pattern, `\*`, ".*")
-	pattern = strings.ReplaceAll(pattern, `\?`, ".")  // QuoteMeta escapes '?', so replace `\?` with `.`
+	pattern = strings.ReplaceAll(pattern, `\?`, ".") // QuoteMeta escapes '?', so replace `\?` with `.`
 
 	// Anchor the pattern and make it case-insensitive
 	regexString := "(?i)^" + pattern + "$"

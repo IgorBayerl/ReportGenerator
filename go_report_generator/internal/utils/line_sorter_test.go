@@ -11,7 +11,7 @@ type testItem struct {
 	name string
 }
 
-func (t testItem) GetFirstLine() int      { return t.line }
+func (t testItem) GetFirstLine() int       { return t.line }
 func (t testItem) GetSortableName() string { return t.name }
 
 func TestSortByLineAndName_BasicSorting(t *testing.T) {

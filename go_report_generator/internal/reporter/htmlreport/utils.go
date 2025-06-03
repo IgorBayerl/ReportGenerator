@@ -51,37 +51,37 @@ func (b *HtmlReportBuilder) getClassReportFilename(assemblyShortName, className 
 	return generateUniqueFilename(assemblyShortName, className, existingFilenames)
 }
 
-func determineLineVisitStatus(hits int, isBranchPoint bool, coveredBranches int, totalBranches int) int {
+func determineLineVisitStatus(hits int, isBranchPoint bool, coveredBranches int, totalBranches int) model.LineVisitStatus { // Changed return type
 	if hits < 0 {
-		return lineVisitStatusNotCoverable
+		return model.NotCoverable
 	}
 	if isBranchPoint {
 		if totalBranches == 0 {
-			return lineVisitStatusNotCoverable
+			return model.NotCoverable
 		}
 		if coveredBranches == totalBranches {
-			return lineVisitStatusCovered
+			return model.Covered
 		}
 		if coveredBranches > 0 {
-			return lineVisitStatusPartiallyCovered
+			return model.PartiallyCovered
 		}
-		return lineVisitStatusNotCovered
+		return model.NotCovered
 	}
 	if hits > 0 {
-		return lineVisitStatusCovered
+		return model.Covered
 	}
-	return lineVisitStatusNotCovered
+	return model.NotCovered
 }
 
-func lineVisitStatusToString(status int) string {
+func lineVisitStatusToString(status model.LineVisitStatus) string { // Changed parameter type
 	switch status {
-	case lineVisitStatusCovered:
+	case model.Covered: // Use model.Covered
 		return "green"
-	case lineVisitStatusNotCovered:
+	case model.NotCovered: // Use model.NotCovered
 		return "red"
-	case lineVisitStatusPartiallyCovered:
+	case model.PartiallyCovered: // Use model.PartiallyCovered
 		return "orange"
-	default: // lineVisitStatusNotCoverable
+	default: // model.NotCoverable
 		return "gray"
 	}
 }

@@ -196,7 +196,7 @@ func TestDetermineLineVisitStatus(t *testing.T) {
 		isBranchPoint   bool
 		coveredBranches int
 		totalBranches   int
-		want            int
+		want            model.LineVisitStatus
 	}{
 		// Non-branch points
 		{"not coverable (negative hits)", -1, false, 0, 0, lineVisitStatusNotCoverable},
@@ -223,7 +223,7 @@ func TestDetermineLineVisitStatus(t *testing.T) {
 func TestLineVisitStatusToString(t *testing.T) {
 	tests := []struct {
 		name   string
-		status int
+		status model.LineVisitStatus
 		want   string
 	}{
 		{"covered", lineVisitStatusCovered, "green"},

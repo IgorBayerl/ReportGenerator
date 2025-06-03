@@ -73,6 +73,7 @@ type Line struct {
 	CoveredBranches          int            // Number of branches on this line that were covered
 	TotalBranches            int            // Total number of branches on this line
 	LineCoverageByTestMethod map[string]int // Tracks hits for this line by TestMethod.ID
+	LineVisitStatus          LineVisitStatus
 }
 
 type CodeElement struct {

@@ -135,22 +135,20 @@ func main() {
 		os.Exit(1)
 	}
 
-
 	currentSettings := settings.NewSettings() // Create settings instance
 	actualTitle := *title
 	if actualTitle == "" {
 		actualTitle = "Coverage Report"
 	}
 
-    // Collect raw filter strings from CLI (or config file if you add that later)
-    // For now, assuming they are not yet CLI flags, so passing empty slices.
-    // If you add CLI flags for filters, parse them here.
-    assemblyFilterStrings := []string{} // Placeholder: populate from CLI flags if available
-    classFilterStrings := []string{}    // Placeholder
-    fileFilterStrings := []string{}     // Placeholder
-    rhAssemblyFilterStrings := []string{}// Placeholder
-    rhClassFilterStrings := []string{}  // Placeholder
-
+	// Collect raw filter strings from CLI (or config file if you add that later)
+	// For now, assuming they are not yet CLI flags, so passing empty slices.
+	// If you add CLI flags for filters, parse them here.
+	assemblyFilterStrings := []string{}   // Placeholder: populate from CLI flags if available
+	classFilterStrings := []string{}      // Placeholder
+	fileFilterStrings := []string{}       // Placeholder
+	rhAssemblyFilterStrings := []string{} // Placeholder
+	rhClassFilterStrings := []string{}    // Placeholder
 
 	reportConfig, err := reportconfig.NewReportConfiguration( // Updated call
 		actualReportFiles,
@@ -162,21 +160,20 @@ func main() {
 		actualTitle,
 		verbosity,
 		invalidPatterns,
-        assemblyFilterStrings,
-        classFilterStrings,
-        fileFilterStrings,
-        rhAssemblyFilterStrings,
-        rhClassFilterStrings,
-        currentSettings, // Pass settings
+		assemblyFilterStrings,
+		classFilterStrings,
+		fileFilterStrings,
+		rhAssemblyFilterStrings,
+		rhClassFilterStrings,
+		currentSettings, // Pass settings
 	)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error creating report configuration: %v\n", err)
-        os.Exit(1)
-    }
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating report configuration: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Create ReportContext once, after initial config and settings are ready.
 	reportCtx := reporting.NewReportContext(reportConfig, currentSettings)
-
 
 	var parserResults []*parser.ParserResult
 	processedAllFilesSuccessfully := true
@@ -209,20 +206,20 @@ func main() {
 		currentConfig := reportCtx.ReportConfiguration()
 		if len(currentConfig.SourceDirectories()) == 0 && len(result.SourceDirectories) > 0 {
 			fmt.Printf("Note: Report '%s' specified source directories: %v. Updating configuration for context.\n", reportFile, result.SourceDirectories)
-			
-            // Re-create or update the config and then the context
-            // This is a bit clumsy; ideally, ReportConfiguration would be mutable or source dirs handled centrally.
+
+			// Re-create or update the config and then the context
+			// This is a bit clumsy; ideally, ReportConfiguration would be mutable or source dirs handled centrally.
 			updatedConfig, confErr := reportconfig.NewReportConfiguration(
 				actualReportFiles, *outputDir, result.SourceDirectories, "",
 				requestedTypes, *tag, actualTitle, verbosity, invalidPatterns,
-                assemblyFilterStrings, classFilterStrings, fileFilterStrings,
-                rhAssemblyFilterStrings, rhClassFilterStrings, currentSettings,
+				assemblyFilterStrings, classFilterStrings, fileFilterStrings,
+				rhAssemblyFilterStrings, rhClassFilterStrings, currentSettings,
 			)
-            if confErr != nil {
-                 fmt.Fprintf(os.Stderr, "Error updating report configuration with new source dirs: %v\n", confErr)
-            } else {
-			    reportCtx = reporting.NewReportContext(updatedConfig, currentSettings) // Update the context for subsequent operations
-            }
+			if confErr != nil {
+				fmt.Fprintf(os.Stderr, "Error updating report configuration with new source dirs: %v\n", confErr)
+			} else {
+				reportCtx = reporting.NewReportContext(updatedConfig, currentSettings) // Update the context for subsequent operations
+			}
 		}
 	}
 
@@ -230,7 +227,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: No coverage reports could be parsed successfully.\n")
 		os.Exit(1)
 	}
-	
+
 	fmt.Printf("Merging %d parsed report(s)...\n", len(parserResults))
 	// Pass reportCtx to MergeParserResults as well, it might need config/settings.
 	summaryResult, err := analyzer.MergeParserResults(parserResults, reportCtx.ReportConfiguration())
@@ -240,7 +237,7 @@ func main() {
 	}
 	fmt.Printf("Coverage data merged and analyzed.\n")
 
-    fmt.Printf("Generating reports in: %s\n", *outputDir)
+	fmt.Printf("Generating reports in: %s\n", *outputDir)
 	if err := os.MkdirAll(*outputDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
 		os.Exit(1)
@@ -255,7 +252,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Failed to generate text report: %v\n", err)
 			}
 		case "Html":
-			htmlBuilder := htmlreport.NewHtmlReportBuilder(*outputDir, reportCtx) 
+			htmlBuilder := htmlreport.NewHtmlReportBuilder(*outputDir, reportCtx)
 			if err := htmlBuilder.CreateReport(summaryResult); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to generate HTML report: %v\n", err)
 			}
