@@ -11,6 +11,7 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 // TextReportBuilder generates a text summary report.
@@ -50,6 +51,10 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 	defer f.Close()
 
 	sfw := &summaryFileWriter{f: f}
+	// Assuming decimalPlaces is 1 as per current settings default.
+	// For production, this should come from reportCtx.Settings().MaximumDecimalPlacesForCoverageQuotas
+	decimalPlaces := 1                     // Placeholder, should be from settings
+	decimalPlacesForPercentageDisplay := 0 // Placeholder, should be from settings
 
 	sfw.writeLine("Summary")
 	sfw.writeLine("  Generated on: %s", time.Now().Format("02/01/2006 - 15:04:05"))
@@ -79,11 +84,8 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 	sfw.writeLine("  Classes: %d", totalClasses)
 	sfw.writeLine("  Files: %d", totalFiles)
 
-	overallLineRate := 0.0
-	if summary.LinesValid > 0 {
-		overallLineRate = (float64(summary.LinesCovered) / float64(summary.LinesValid)) * 100
-	}
-	sfw.writeLine("  Line coverage: %.1f%%", overallLineRate)
+	overallLineCoverage := utils.CalculatePercentage(summary.LinesCovered, summary.LinesValid, decimalPlaces)
+	sfw.writeLine("  Line coverage: %s", utils.FormatPercentage(overallLineCoverage, decimalPlacesForPercentageDisplay))
 	sfw.writeLine("  Covered lines: %d", summary.LinesCovered)
 	sfw.writeLine("  Uncovered lines: %d", summary.LinesValid-summary.LinesCovered)
 	sfw.writeLine("  Coverable lines: %d", summary.LinesValid)
@@ -93,75 +95,51 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 		sfw.writeLine("  Total lines: N/A")
 	}
 
-	// Conditional Branch Coverage Output
-	if summary.BranchesValid != nil && summary.BranchesCovered != nil { // Check if pointers are set
-		if *summary.BranchesValid > 0 { // Only print percentage if there are valid branches
-			overallBranchRate := (float64(*summary.BranchesCovered) / float64(*summary.BranchesValid)) * 100
-			sfw.writeLine("  Branch coverage: %.1f%% (%d of %d)", overallBranchRate, *summary.BranchesCovered, *summary.BranchesValid)
+	if summary.BranchesValid != nil && summary.BranchesCovered != nil {
+		overallBranchCoverage := utils.CalculatePercentage(*summary.BranchesCovered, *summary.BranchesValid, decimalPlaces)
+		// Only print percentage if there are valid branches (CalculatePercentage returns NaN if total is 0)
+		if *summary.BranchesValid > 0 {
+			sfw.writeLine("  Branch coverage: %s (%d of %d)", utils.FormatPercentage(overallBranchCoverage, decimalPlacesForPercentageDisplay), *summary.BranchesCovered, *summary.BranchesValid)
+		} else { // No valid branches, just print counts or N/A for percentage
+			sfw.writeLine("  Branch coverage: N/A (%d of %d)", *summary.BranchesCovered, *summary.BranchesValid)
 		}
-		// Always print these if the data was present in the report, even if 0
 		sfw.writeLine("  Covered branches: %d", *summary.BranchesCovered)
 		sfw.writeLine("  Total branches: %d", *summary.BranchesValid)
 	}
 
-	totalMethods, coveredMethods, fullyCoveredMethods := 0, 0, 0
+	totalMethodsAgg, coveredMethodsAgg, fullyCoveredMethodsAgg := 0, 0, 0
 	for _, assembly := range summary.Assemblies {
 		for _, class := range assembly.Classes {
-			for _, method := range class.Methods {
-				totalMethods++
-				methodLinesValid := 0
-				methodLinesCovered := 0
-				if method.Lines != nil {
-					for _, line := range method.Lines {
-						methodLinesValid++
-						if line.Hits > 0 {
-							methodLinesCovered++
-						}
-					}
-				}
-				if methodLinesCovered > 0 {
-					coveredMethods++
-				}
-				if methodLinesValid > 0 && methodLinesCovered == methodLinesValid {
-					fullyCoveredMethods++
-				}
-			}
+			// Assuming model.Class now has these pre-aggregated from analyzer/class.go
+			totalMethodsAgg += class.TotalMethods
+			coveredMethodsAgg += class.CoveredMethods
+			fullyCoveredMethodsAgg += class.FullyCoveredMethods
 		}
 	}
-	methodCoverage := 0.0
-	if totalMethods > 0 {
-		methodCoverage = (float64(coveredMethods) / float64(totalMethods)) * 100
-	}
-	fullMethodCoverage := 0.0
-	if totalMethods > 0 {
-		fullMethodCoverage = (float64(fullyCoveredMethods) / float64(totalMethods)) * 100
-	}
-	sfw.writeLine("  Method coverage: %.1f%% (%d of %d)", methodCoverage, coveredMethods, totalMethods)
-	sfw.writeLine("  Full method coverage: %.1f%% (%d of %d)", fullMethodCoverage, fullyCoveredMethods, totalMethods)
-	sfw.writeLine("  Covered methods: %d", coveredMethods)
-	sfw.writeLine("  Fully covered methods: %d", fullyCoveredMethods)
-	sfw.writeLine("  Total methods: %d", totalMethods)
+	methodCoverage := utils.CalculatePercentage(coveredMethodsAgg, totalMethodsAgg, decimalPlaces)
+	fullMethodCoverage := utils.CalculatePercentage(fullyCoveredMethodsAgg, totalMethodsAgg, decimalPlaces)
+
+	sfw.writeLine("  Method coverage: %s (%d of %d)", utils.FormatPercentage(methodCoverage, decimalPlacesForPercentageDisplay), coveredMethodsAgg, totalMethodsAgg)
+	sfw.writeLine("  Full method coverage: %s (%d of %d)", utils.FormatPercentage(fullMethodCoverage, decimalPlacesForPercentageDisplay), fullyCoveredMethodsAgg, totalMethodsAgg)
+	sfw.writeLine("  Covered methods: %d", coveredMethodsAgg)
+	sfw.writeLine("  Fully covered methods: %d", fullyCoveredMethodsAgg)
+	sfw.writeLine("  Total methods: %d", totalMethodsAgg)
 
 	tw := tabwriter.NewWriter(f, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 	for _, assembly := range summary.Assemblies {
 		fmt.Fprintln(tw)
-		assemblyLineRate := 0.0
-		if assembly.LinesValid > 0 {
-			assemblyLineRate = (float64(assembly.LinesCovered) / float64(assembly.LinesValid)) * 100
-		}
-		fmt.Fprintf(tw, "%s\t  %.1f%%\n", assembly.Name, assemblyLineRate)
+		assemblyLineCoverage := utils.CalculatePercentage(assembly.LinesCovered, assembly.LinesValid, decimalPlaces)
+		fmt.Fprintf(tw, "%s\t  %s\n", assembly.Name, utils.FormatPercentage(assemblyLineCoverage, decimalPlacesForPercentageDisplay))
+
 		sortedClasses := make([]model.Class, len(assembly.Classes))
 		copy(sortedClasses, assembly.Classes)
 		sort.Slice(sortedClasses, func(i, j int) bool {
 			return sortedClasses[i].DisplayName < sortedClasses[j].DisplayName
 		})
 		for _, class := range sortedClasses {
-			classLineRate := 0.0
-			if class.LinesValid > 0 {
-				classLineRate = (float64(class.LinesCovered) / float64(class.LinesValid)) * 100
-			}
-			fmt.Fprintf(tw, "  %s\t  %.1f%%\n", class.DisplayName, classLineRate)
+			classLineCoverage := utils.CalculatePercentage(class.LinesCovered, class.LinesValid, decimalPlaces)
+			fmt.Fprintf(tw, "  %s\t  %s\n", class.DisplayName, utils.FormatPercentage(classLineCoverage, decimalPlacesForPercentageDisplay))
 		}
 	}
 	return nil
