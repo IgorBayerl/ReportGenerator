@@ -64,8 +64,8 @@ func GetTranslations() map[string]string {
 		"NoGrouping":                     "No grouping",
 		"ByAssembly":                     "By assembly",
 		"ByNamespace":                    "By namespace, Level:",
-		"CollapseAll":                    "Collapse all",
-		"ExpandAll":                      "Expand all",
+
+		// Angular-specific keys (must match Angular casing) TODO needs review
 		"Grouping":                       "Grouping:",
 		"CompareHistory":                 "Compare with:",
 		"Date":                           "Date",
@@ -134,6 +134,43 @@ func GetTranslations() map[string]string {
 		"File":              "File",    // Used like "File 0: path/to/file.cs"
 		"NoFilesFound":      "No files found.",
 		"Line":              "Line", // Header in source code table
+
+		// == Angular-specific keys (must match Angular casing) ==
+		"collapseAll": "Collapse all",
+		"expandAll": "Expand all",
+		"noGrouping": "No grouping",
+		"byAssembly": "By assembly",
+		"byNamespace": "By namespace, Level:",
+		"grouping": "Grouping:",
+		"compareHistory": "Compare with:",
+		"date": "Date",
+		"filter": "Filter",
+		"coverage": "Line coverage",
+		"branchCoverage": "Branch coverage",
+		"methodCoverage": "Method coverage",
+		"fullMethodCoverage": "Full method coverage",
+		"metrics": "Metrics",
+		"selectCoverageTypes": "Select coverage types",
+		"selectCoverageTypesAndMetrics": "Select coverage types & metrics",
+		"name": "Name",
+		"covered": "Covered",
+		"uncovered": "Uncovered",
+		"coverable": "Coverable",
+		"total": "Total",
+		"percentage": "Percentage",
+		"allChanges": "All changes",
+		"lineCoverageIncreaseOnly": "Line coverage: Increase only",
+		"lineCoverageDecreaseOnly": "Line coverage: Decrease only",
+		"branchCoverageIncreaseOnly": "Branch coverage: Increase only",
+		"branchCoverageDecreaseOnly": "Branch coverage: Decrease only",
+		"methodCoverageIncreaseOnly": "Method coverage: Increase only",
+		"methodCoverageDecreaseOnly": "Method coverage: Decrease only",
+		"fullMethodCoverageIncreaseOnly": "Full method coverage: Increase only",
+		"fullMethodCoverageDecreaseOnly": "Full method coverage: Decrease only",
+		// Ensure lowercase keys for Angular compatibility
+		"methodCoverageProVersion": "This feature is only available for sponsors.",
+		"coverageTypes": "Coverage types",
+		"history": "History",
 	}
 
 }

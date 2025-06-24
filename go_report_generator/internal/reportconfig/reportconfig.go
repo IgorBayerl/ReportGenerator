@@ -1,11 +1,11 @@
 package reportconfig
 
 import (
-	"fmt" // Added for error formatting
+	"fmt"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering" // New import
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"         // New import for Settings
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
 // IReportConfiguration defines the configuration for report generation.
@@ -16,18 +16,18 @@ type IReportConfiguration interface {
 	HistoryDirectory() string
 	ReportTypes() []string
 	Plugins() []string
-	AssemblyFilters() filtering.IFilter            // Changed from []string
-	ClassFilters() filtering.IFilter               // Changed from []string
-	FileFilters() filtering.IFilter                // Changed from []string
-	RiskHotspotAssemblyFilters() filtering.IFilter // Changed from []string
-	RiskHotspotClassFilters() filtering.IFilter    // Changed from []string
+	AssemblyFilters() filtering.IFilter            
+	ClassFilters() filtering.IFilter               
+	FileFilters() filtering.IFilter                
+	RiskHotspotAssemblyFilters() filtering.IFilter 
+	RiskHotspotClassFilters() filtering.IFilter    
 	VerbosityLevel() logging.VerbosityLevel
 	Tag() string
 	Title() string
 	License() string
 	InvalidReportFilePatterns() []string
 	IsVerbosityLevelValid() bool
-	Settings() *settings.Settings // Added to provide access to settings
+	Settings() *settings.Settings 
 }
 
 // ReportConfiguration is a concrete implementation of IReportConfiguration.
@@ -38,18 +38,18 @@ type ReportConfiguration struct {
 	HDirectory                    string
 	RTypes                        []string
 	PluginsList                   []string
-	AssemblyFilterInstance        filtering.IFilter // Changed from []string
-	ClassFilterInstance           filtering.IFilter // Changed from []string
-	FileFilterInstance            filtering.IFilter // Changed from []string
-	RiskHotspotAssemblyFilterInst filtering.IFilter // Changed from []string
-	RiskHotspotClassFilterInst    filtering.IFilter // Changed from []string
+	AssemblyFilterInstance        filtering.IFilter 
+	ClassFilterInstance           filtering.IFilter 
+	FileFilterInstance            filtering.IFilter 
+	RiskHotspotAssemblyFilterInst filtering.IFilter 
+	RiskHotspotClassFilterInst    filtering.IFilter 
 	VLevel                        logging.VerbosityLevel
 	CfgTag                        string
 	CfgTitle                      string
 	CfgLicense                    string
 	InvalidPatterns               []string
 	VLevelValid                   bool
-	App                           *settings.Settings // Added
+	App                           *settings.Settings 
 }
 
 // Implement IReportConfiguration methods
@@ -74,7 +74,7 @@ func (rc *ReportConfiguration) Title() string                          { return 
 func (rc *ReportConfiguration) License() string                        { return rc.CfgLicense }
 func (rc *ReportConfiguration) InvalidReportFilePatterns() []string    { return rc.InvalidPatterns }
 func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return rc.VLevelValid }
-func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App } // Added
+func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App } 
 
 // NewReportConfiguration is a constructor for ReportConfiguration.
 func NewReportConfiguration(
@@ -93,7 +93,7 @@ func NewReportConfiguration(
 	fileFilterStrings []string,
 	riskHotspotAssemblyFilterStrings []string,
 	riskHotspotClassFilterStrings []string,
-	appSettings *settings.Settings, // Added
+	appSettings *settings.Settings, 
 ) (*ReportConfiguration, error) { // Return error for filter creation issues
 	if len(reportTypes) == 0 {
 		reportTypes = []string{"Html"} // Default

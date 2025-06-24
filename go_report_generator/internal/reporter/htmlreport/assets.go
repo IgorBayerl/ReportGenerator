@@ -25,27 +25,73 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 	if err := b.copyStaticAssets(); err != nil {
 		return fmt.Errorf("failed to copy static assets: %w", err)
 	}
+	// copyAngularAssets ensures all files from angular_frontend_spa/dist are in b.OutputDir
 	if err := b.copyAngularAssets(b.OutputDir); err != nil {
 		return fmt.Errorf("failed to copy angular assets: %w", err)
 	}
 
-	angularIndexHTMLPath := filepath.Join(angularDistSourcePath, "index.html")
-	cssFile, runtimeJs, polyfillsJs, mainJs, err := b.parseAngularIndexHTML(angularIndexHTMLPath)
+	// parseAngularIndexHTML gets the original module filenames
+	// These are relative to the root of the copied 'dist' folder (i.e., b.OutputDir)
+	cssFile, runtimeJsFile, polyfillsJsFile, mainJsFile, err := b.parseAngularIndexHTML(filepath.Join(b.OutputDir, "index.html"))
 	if err != nil {
-		return fmt.Errorf("failed to parse Angular index.html: %w", err)
-	}
-
-	if cssFile == "" || runtimeJs == "" || mainJs == "" {
-		fmt.Fprintf(os.Stderr, "Warning: One or more Angular assets might be missing (css: %s, runtime: %s, polyfills: %s, main: %s)\n", cssFile, runtimeJs, polyfillsJs, mainJs)
-		if cssFile == "" || runtimeJs == "" || mainJs == "" {
-			return fmt.Errorf("missing critical Angular assets from index.html (css: '%s', runtime: '%s', main: '%s')", cssFile, runtimeJs, mainJs)
+		// If parsing fails, it might be because index.html wasn't copied or is unexpected.
+		// Try parsing from the source dist path as a fallback for getting filenames.
+		cssFile, runtimeJsFile, polyfillsJsFile, mainJsFile, err = b.parseAngularIndexHTML(filepath.Join(angularDistSourcePath, "index.html"))
+		if err != nil {
+			return fmt.Errorf("failed to parse Angular index.html from both output and source: %w", err)
 		}
 	}
 
-	b.angularCssFile = cssFile
-	b.angularRuntimeJsFile = runtimeJs
-	b.angularPolyfillsJsFile = polyfillsJs
-	b.angularMainJsFile = mainJs
+	if cssFile == "" || runtimeJsFile == "" || mainJsFile == "" {
+		return fmt.Errorf("missing critical Angular assets from index.html (css: '%s', runtime: '%s', main: '%s')", cssFile, runtimeJsFile, mainJsFile)
+	}
+
+	b.angularCssFile = cssFile // This remains for <link rel="stylesheet">
+
+	// Concatenate JS files
+	var jsBuilder strings.Builder
+
+	// Runtime JS
+	runtimePath := filepath.Join(b.OutputDir, runtimeJsFile)
+	content, err := os.ReadFile(runtimePath)
+	if err != nil {
+		return fmt.Errorf("failed to read Angular runtime JS file %s: %w", runtimePath, err)
+	}
+	jsBuilder.Write(content)
+	jsBuilder.WriteString(";\n\n") // Add semicolon and newline for safety
+
+	// Polyfills JS (optional)
+	if polyfillsJsFile != "" {
+		polyfillsPath := filepath.Join(b.OutputDir, polyfillsJsFile)
+		content, err = os.ReadFile(polyfillsPath)
+		if err != nil {
+			return fmt.Errorf("failed to read Angular polyfills JS file %s: %w", polyfillsPath, err)
+		}
+		jsBuilder.Write(content)
+		jsBuilder.WriteString(";\n\n")
+	}
+
+	// Main JS
+	mainPath := filepath.Join(b.OutputDir, mainJsFile)
+	content, err = os.ReadFile(mainPath)
+	if err != nil {
+		return fmt.Errorf("failed to read Angular main JS file %s: %w", mainPath, err)
+	}
+	jsBuilder.Write(content)
+	jsBuilder.WriteString(";\n")
+
+	b.combinedAngularJsFile = "reportgenerator.combined.js" // Or any name you prefer
+	combinedJsPath := filepath.Join(b.OutputDir, b.combinedAngularJsFile)
+	err = os.WriteFile(combinedJsPath, []byte(jsBuilder.String()), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write combined Angular JS file %s: %w", combinedJsPath, err)
+	}
+
+	// We no longer need to store individual JS module filenames for script tags
+	b.angularRuntimeJsFile = ""
+	b.angularPolyfillsJsFile = ""
+	b.angularMainJsFile = ""
+
 	return nil
 }
 

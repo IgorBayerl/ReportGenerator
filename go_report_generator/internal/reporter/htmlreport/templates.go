@@ -21,14 +21,15 @@ const summaryPageLayoutTemplate = `<!DOCTYPE html>
 <body>
     <!-- Data for Angular components -->
     <script>
-        window.assemblies = JSON.parse({{.AssembliesJSON}});
-        window.riskHotspots = JSON.parse({{.RiskHotspotsJSON}});
-        window.metrics = JSON.parse({{.MetricsJSON}});
-        window.riskHotspotMetrics = JSON.parse({{.RiskHotspotMetricsJSON}});
-        window.historicCoverageExecutionTimes = JSON.parse({{.HistoricCoverageExecutionTimesJSON}});
-        window.translations = JSON.parse({{.TranslationsJSON}}); // The marshaled map
+        window.assemblies = {{.AssembliesJSON}}; 
+        window.riskHotspots = {{.RiskHotspotsJSON}}; 
+        window.metrics = {{.MetricsJSON}}; 
+        window.riskHotspotMetrics = {{.RiskHotspotMetricsJSON}}; 
+        window.historicCoverageExecutionTimes = {{.HistoricCoverageExecutionTimesJSON}}; 
+        window.translations = {{.TranslationsJSON}}; 
+
         window.branchCoverageAvailable = {{.BranchCoverageAvailable}};
-        window.methodCoverageAvailable = {{.MethodCoverageAvailable}}; // For enabling/disabling PRO features in Angular
+        window.methodCoverageAvailable = {{.MethodCoverageAvailable}};
         window.maximumDecimalPlacesForCoverageQuotas = {{.MaximumDecimalPlacesForCoverageQuotas}};
     </script>
 
@@ -99,9 +100,7 @@ const summaryPageLayoutTemplate = `<!DOCTYPE html>
 
     <script type="text/javascript" src="chartist.min.js"></script> <!-- For Angular components if they use Chartist -->
     <script type="text/javascript" src="custom.js"></script>
-    <script src="{{.AngularRuntimeJsFile}}" type="module"></script>
-    {{if .AngularPolyfillsJsFile}}<script src="{{.AngularPolyfillsJsFile}}" type="module"></script>{{end}}
-    <script src="{{.AngularMainJsFile}}" type="module"></script>
+    <script type="text/javascript" src="{{.CombinedAngularJsFile}}"></script>
 </body>
 </html>`
 
@@ -285,9 +284,7 @@ const classDetailLayoutTemplate = `<!DOCTYPE html>
     </div> 
 
     <script type="text/javascript" src="custom.js"></script> 
-    <script src="{{.AngularRuntimeJsFile}}" type="module"></script>
-    {{if .AngularPolyfillsJsFile}}<script src="{{.AngularPolyfillsJsFile}}" type="module"></script>{{end}}
-    <script src="{{.AngularMainJsFile}}" type="module"></script>
+    <script type="text/javascript" src="{{.CombinedAngularJsFile}}"></script>
 </body>
 </html>`
 

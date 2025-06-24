@@ -5,7 +5,6 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
@@ -37,14 +36,20 @@ type HtmlReportBuilder struct {
 	reportTitle                              string
 	tag                                      string
 	translations                             map[string]string
-	onlySummary                              bool // In C#, this is based on report types. For now, assume false.
+	onlySummary                              bool
 
+	classReportFilenames       map[string]string
+	tempExistingLowerFilenames map[string]struct{}
+
+	combinedAngularJsFile              string // To store "reportgenerator.combined.js"
 }
 
 func NewHtmlReportBuilder(outputDir string, reportCtx reporting.IReportContext) *HtmlReportBuilder {
 	return &HtmlReportBuilder{
-		OutputDir:     outputDir,
-		ReportContext: reportCtx,
+		OutputDir:                  outputDir,
+		ReportContext:              reportCtx,
+		classReportFilenames:       make(map[string]string),
+		tempExistingLowerFilenames: make(map[string]struct{}),
 	}
 }
 
@@ -59,29 +64,32 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	if err := b.prepareOutputDirectory(); err != nil {
 		return err
 	}
-	if err := b.initializeAssets(); err != nil {
+	if err := b.initializeAssets(); err != nil { // Copies static assets and parses Angular index.html
 		return err
 	}
 
-	b.initializeBuilderProperties(report)
-	if err := b.prepareGlobalJSONData(report); err != nil {
+	b.initializeBuilderProperties(report)                   // Sets up common properties like title, translations etc.
+	if err := b.prepareGlobalJSONData(report); err != nil { // Prepares metricsJSON, riskHotspotMetricsJSON etc.
 		return err
 	}
 
-	summaryPageAssemblyFilenames := make(map[string]struct{})
-	angularAssemblies, err := b.buildAngularAssemblyViewModelsForSummary(report, summaryPageAssemblyFilenames)
+	// This call will populate b.classReportFilenames and b.assembliesJSON
+	// The returned 'angularAssemblies' is not strictly needed here if all subsequent
+	// operations use the builder's stored JSON or maps.
+	// However, buildSummaryPageData might still conceptually want the processed view models.
+	// Let's keep it for buildSummaryPageData if that function's logic benefits from it.
+	angularAssembliesForSummary, err := b.buildAngularAssemblyViewModelsForSummary(report)
 	if err != nil {
 		return fmt.Errorf("failed to build angular assembly view models for summary: %w", err)
 	}
 
-	// For now, risk hotspots are empty for the summary page JSON.
-	// This would be populated if risk hotspot analysis was performed.
-	var angularRiskHotspots []AngularRiskHotspotViewModel
-	if err := b.setRiskHotspotsJSON(angularRiskHotspots); err != nil {
+	var angularRiskHotspots []AngularRiskHotspotViewModel              // Placeholder
+	if err := b.setRiskHotspotsJSON(angularRiskHotspots); err != nil { // Prepares b.riskHotspotsJSON
 		return err
 	}
 
-	summaryData, err := b.buildSummaryPageData(report, angularAssemblies, angularRiskHotspots)
+	// Pass angularAssembliesForSummary to buildSummaryPageData
+	summaryData, err := b.buildSummaryPageData(report, angularAssembliesForSummary, angularRiskHotspots)
 	if err != nil {
 		return fmt.Errorf("failed to build summary page data: %w", err)
 	}
@@ -90,12 +98,12 @@ func (b *HtmlReportBuilder) CreateReport(report *model.SummaryResult) error {
 	}
 
 	if !b.onlySummary {
-		if err := b.renderClassDetailPages(report, angularAssemblies); err != nil {
+		// renderClassDetailPages uses b.classReportFilenames, so it doesn't need angularAssembliesForSummary
+		if err := b.renderClassDetailPages(report); err != nil {
 			return fmt.Errorf("failed to render class detail pages: %w", err)
 		}
 	}
 	return nil
-
 }
 
 // --- CreateReport helper methods ---
@@ -141,67 +149,56 @@ func (b *HtmlReportBuilder) renderSummaryPage(data SummaryPageData) error {
 	return summaryPageTpl.Execute(summaryFile, data)
 }
 
-func (b *HtmlReportBuilder) renderClassDetailPages(report *model.SummaryResult, angularAssembliesForSummary []AngularAssemblyViewModel) error {
-	classPageFilenames := make(map[string]struct{}) // Use a new map for class page filenames
+func (b *HtmlReportBuilder) renderClassDetailPages(report *model.SummaryResult) error { // Removed angularAssembliesForSummary
+	if b.onlySummary {
+		return nil
+	}
 
 	for _, assemblyModel := range report.Assemblies {
 		for _, classModel := range assemblyModel.Classes {
-			classReportFilename := b.determineClassReportFilename(&assemblyModel, &classModel, angularAssembliesForSummary, classPageFilenames)
-			if classReportFilename == "" {
-				// This case should ideally not happen if logic is correct
-				fmt.Fprintf(os.Stderr, "Warning: Could not determine report filename for class %s. Skipping detail page.\n", classModel.DisplayName)
+			classKey := assemblyModel.Name + "_" + classModel.Name
+
+			classReportFilename, ok := b.classReportFilenames[classKey]
+
+			if !ok || classReportFilename == "" {
+				fmt.Fprintf(os.Stderr, "Error: Class report filename not found for %s in %s. Skipping detail page.\n", classModel.DisplayName, assemblyModel.Name)
 				continue
 			}
 
 			err := b.generateClassDetailHTML(&classModel, classReportFilename, b.tag)
 			if err != nil {
-				// Log or collect errors, but continue if possible, or return immediately
 				fmt.Fprintf(os.Stderr, "Failed to generate detail page for class '%s' (file: %s): %v\n", classModel.DisplayName, classReportFilename, err)
-				// Depending on desired behavior, you might return err here to stop all generation
 			}
 		}
 	}
 	return nil
-
 }
 
-func (b *HtmlReportBuilder) determineClassReportFilename(
-	assemblyModel *model.Assembly,
-	classModel *model.Class,
-	angularAssembliesForSummary []AngularAssemblyViewModel,
-	classPageFilenames map[string]struct{}, // Map for filenames generated for class detail pages
-) string {
-	var classReportFilename string
-	foundFilenameInSummary := false
+// determineClassReportFilename gets or generates a unique HTML filename for a class report.
+// It uses and updates the builder's internal maps for filename tracking.
+// assemblyName is the full assembly name, className is the model's raw/unique name.
+func (b *HtmlReportBuilder) determineClassReportFilename(assemblyName string, className string, assemblyShortNameForFile string) string {
+	// Create a unique key for the class within its assembly.
+	// Using the full assembly name and raw class name for the key ensures uniqueness.
+	classKey := assemblyName + "_" + className
 
-	// 1. Check if this class's report path was already defined in the summary Angular VMs
-	for _, asmView := range angularAssembliesForSummary {
-		if asmView.Name == assemblyModel.Name {
-			for _, classView := range asmView.Classes {
-				if classView.Name == classModel.DisplayName {
-					classReportFilename = classView.ReportPath
-					if classReportFilename != "" {
-						// "Reserve" this filename in the current context's map
-						classPageFilenames[strings.ToLower(classReportFilename)] = struct{}{}
-						foundFilenameInSummary = true
-					}
-					break
-				}
-			}
-		}
-		if foundFilenameInSummary {
-			break
-		}
+	if filename, ok := b.classReportFilenames[classKey]; ok {
+		return filename // Return already generated filename
 	}
 
-	// 2. If not found in summary VMs or path was empty, generate a new unique filename.
-	if !foundFilenameInSummary || classReportFilename == "" {
-		// Call the utility function from the htmlreport package (or wherever utils.go is placed)
-		// It uses the package-level sanitizeFilenameChars from its own file.
-		classReportFilename = generateUniqueFilename(assemblyModel.Name, classModel.Name, classPageFilenames)
-	}
+	// Filename not yet generated for this class. Generate a new one.
+	// generateUniqueFilename expects a map of existing *lowercase* filenames.
+	// b.tempExistingLowerFilenames serves this purpose.
+	// assemblyShortNameForFile is used for constructing the base of the filename.
+	newFilename := generateUniqueFilename(assemblyShortNameForFile, className, b.tempExistingLowerFilenames)
 
-	return classReportFilename
+	// Store the actual generated filename (preserving case) in classReportFilenames.
+	b.classReportFilenames[classKey] = newFilename
+	// Also, add its lowercase version to tempExistingLowerFilenames for future uniqueness checks by generateUniqueFilename.
+	// Note: generateUniqueFilename itself adds to the map it's passed, so this is already handled if it modifies its input map.
+	// The current generateUniqueFilename modifies the map passed to it.
+
+	return newFilename
 }
 
 func (b *HtmlReportBuilder) renderClassDetailPage(data ClassDetailData, classReportFilename string) error {

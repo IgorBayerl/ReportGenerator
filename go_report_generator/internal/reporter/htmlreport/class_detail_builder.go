@@ -666,6 +666,7 @@ func (b *HtmlReportBuilder) buildClassDetailPageData(classVM ClassViewModelForDe
 		Translations:                          b.translations,
 		MaximumDecimalPlacesForCoverageQuotas: b.maximumDecimalPlacesForCoverageQuotas,
 		AngularCssFile:                        b.angularCssFile,
+		CombinedAngularJsFile:                 b.combinedAngularJsFile,
 		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
 		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
 		AngularMainJsFile:                     b.angularMainJsFile,

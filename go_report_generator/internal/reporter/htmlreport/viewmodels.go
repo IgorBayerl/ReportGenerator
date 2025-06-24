@@ -10,41 +10,41 @@ type AngularAssemblyViewModel struct {
 
 // AngularClassViewModel corresponds to the data structure for classes within window.assemblies.
 type AngularClassViewModel struct {
-	Name                      string                             `json:"name"` // This should be the DisplayName
+	Name                      string                             `json:"name"`
 	ReportPath                string                             `json:"rp"`
 	CoveredLines              int                                `json:"cl"`
 	UncoveredLines            int                                `json:"ucl"`
 	CoverableLines            int                                `json:"cal"`
-	TotalLines                int                                `json:"tl"` // In C#, this is int?, Go model.Class.TotalLines is int. Ensure consistency.
+	TotalLines                int                                `json:"tl"`
 	CoveredBranches           int                                `json:"cb"`
 	TotalBranches             int                                `json:"tb"`
 	CoveredMethods            int                                `json:"cm"`
 	FullyCoveredMethods       int                                `json:"fcm"`
 	TotalMethods              int                                `json:"tm"`
-	LineCoverageHistory       []float64                          `json:"lch,omitempty"` // Array of line coverage percentages
-	BranchCoverageHistory     []float64                          `json:"bch,omitempty"` // Array of branch coverage percentages
-	MethodCoverageHistory     []float64                          `json:"mch,omitempty"`
-	FullMethodCoverageHistory []float64                          `json:"mfch,omitempty"`
-	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc"`                // Detailed historic coverage records
-	Metrics                   map[string]float64                 `json:"metrics,omitempty"` // e.g., "cyclomaticComplexity": 10
+	LineCoverageHistory       []float64                          `json:"lch"` 
+	BranchCoverageHistory     []float64                          `json:"bch"` 
+	MethodCoverageHistory     []float64                          `json:"mch"` 
+	FullMethodCoverageHistory []float64                          `json:"mfch"`
+	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc"` 
+	Metrics                   map[string]float64                 `json:"metrics,omitempty"` 
 }
 
 // AngularHistoricCoverageViewModel corresponds to individual historic coverage data points.
 type AngularHistoricCoverageViewModel struct {
-	ExecutionTime           string  `json:"et"` // Formatted string: "YYYY-MM-DD - HH:MM:SS - Tag"
+	ExecutionTime           string  `json:"et"`
 	CoveredLines            int     `json:"cl"`
-	UncoveredLines          int     `json:"ucl"` // Calculated: CoverableLines - CoveredLines
+	UncoveredLines          int     `json:"ucl"`
 	CoverableLines          int     `json:"cal"`
 	TotalLines              int     `json:"tl"`
-	LineCoverageQuota       float64 `json:"lcq"` // Percentage
+	LineCoverageQuota       float64 `json:"lcq"`
 	CoveredBranches         int     `json:"cb"`
 	TotalBranches           int     `json:"tb"`
-	BranchCoverageQuota     float64 `json:"bcq"` // Percentage
+	BranchCoverageQuota     float64 `json:"bcq"`
 	CoveredMethods          int     `json:"cm"`
 	FullyCoveredMethods     int     `json:"fcm"`
 	TotalMethods            int     `json:"tm"`
-	MethodCoverageQuota     float64 `json:"mcq"`  // Percentage
-	FullMethodCoverageQuota float64 `json:"mfcq"` // Percentage
+	MethodCoverageQuota     float64 `json:"mcq"`
+	FullMethodCoverageQuota float64 `json:"mfcq"`
 }
 
 // AngularMetricViewModel corresponds to the data structure for window.metrics.
@@ -158,6 +158,7 @@ type ClassDetailData struct {
 	AngularRuntimeJsFile   string
 	AngularPolyfillsJsFile string
 	AngularMainJsFile      string
+	CombinedAngularJsFile string
 
 	// For window.* JSON objects
 	ClassDetailJSON                    template.JS // This will contain AngularClassDetailViewModel
@@ -189,7 +190,7 @@ type ClassViewModelForDetail struct {
 	BranchCoverageRatioTextForDisplay      string
 	MethodCoveragePercentageForDisplay     string
 	MethodCoveragePercentageBarValue       int
-	FullMethodCoveragePercentageForDisplay string // ADDED
+	FullMethodCoveragePercentageForDisplay string 
 	CoveredMethods                         int
 	FullyCoveredMethods                    int
 	TotalMethods                           int
@@ -251,26 +252,29 @@ type SummaryPageData struct {
 	CurrentDateTime string
 	Translations    map[string]string // For direct use in template
 
-	SummaryCards            []CardViewModel           // For the top summary cards
-	OverallHistoryChartData HistoryChartDataViewModel // For the overall history chart
+	SummaryCards            []CardViewModel
+	OverallHistoryChartData HistoryChartDataViewModel
 
-	// For JS script includes (same as ClassDetailData)
+	// For JS script includes
 	AngularCssFile         string
 	AngularRuntimeJsFile   string
 	AngularPolyfillsJsFile string
 	AngularMainJsFile      string
+	CombinedAngularJsFile  string
 
-	AssembliesJSON                        template.JS
-	RiskHotspotsJSON                      template.JS
-	MetricsJSON                           template.JS
-	RiskHotspotMetricsJSON                template.JS
-	HistoricCoverageExecutionTimesJSON    template.JS
-	TranslationsJSON                      template.JS // For JS data block
+	// For window.* JSON objects - These should be template.JS
+	AssembliesJSON                     template.JS
+	RiskHotspotsJSON                   template.JS
+	MetricsJSON                        template.JS
+	RiskHotspotMetricsJSON             template.JS
+	HistoricCoverageExecutionTimesJSON template.JS
+	TranslationsJSON                   template.JS
+
 	BranchCoverageAvailable               bool
 	MethodCoverageAvailable               bool
 	MaximumDecimalPlacesForCoverageQuotas int
-	HasRiskHotspots                       bool // To conditionally show "No risk hotspots found"
-	HasAssemblies                         bool // To conditionally show "No assemblies have been covered"
+	HasRiskHotspots                       bool
+	HasAssemblies                         bool
 }
 
 // CardViewModel represents a summary card for the Go template
