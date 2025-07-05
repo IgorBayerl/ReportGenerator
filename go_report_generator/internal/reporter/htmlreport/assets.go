@@ -46,7 +46,7 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 		return fmt.Errorf("missing critical Angular assets from index.html (css: '%s', runtime: '%s', main: '%s')", cssFile, runtimeJsFile, mainJsFile)
 	}
 
-	b.angularCssFile = cssFile // This remains for <link rel="stylesheet">
+	b.angularCssFile = cssFile 
 
 	// Concatenate JS files
 	var jsBuilder strings.Builder

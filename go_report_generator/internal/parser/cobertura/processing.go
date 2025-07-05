@@ -451,15 +451,6 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 	return &classModel, nil
 }
 
-// processCoberturaLineXML, processCoberturaMethodXML, etc. remain the same for now,
-// as their internal logic for branch counting seems correct. The issue is likely higher up.
-// All other functions (processCoberturaCodeFileFragment, processCoberturaLineXML, setFallbackBranchDataCobertura, processCoberturaMethodXML, processMethodLinesCobertura, populateStandardMethodMetricsCobertura, calculateCrapScoreCobertura, extractMethodNameCobertura, formatDisplayNameCobertura, logicalClassNameCobertura, isFilteredRawClassNameCobertura)
-// in this file remain unchanged from your provided version as they don't directly cause the errors listed,
-// and the branch counting logic within processCoberturaLineXML appears correct.
-// The primary issue being addressed by this change is the misuse of filter objects.
-
-// ... (rest of the functions: processCoberturaCodeFileFragment, processCoberturaLineXML, setFallbackBranchDataCobertura, processCoberturaMethodXML, processMethodLinesCobertura, populateStandardMethodMetricsCobertura, calculateCrapScoreCobertura, extractMethodNameCobertura, formatDisplayNameCobertura, logicalClassNameCobertura, isFilteredRawClassNameCobertura are kept as they were in your provided file) ...
-
 func (cp *CoberturaParser) processCoberturaCodeFileFragment(
 	classXML inputxml.ClassXML,
 	sourceDirs []string,

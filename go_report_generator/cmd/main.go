@@ -50,7 +50,6 @@ func main() {
 
 	flag.Parse()
 
-	// ... (CLI parsing and report file globbing remain mostly the same) ...
 	if *reportsPatternsStr == "" {
 		fmt.Println("Usage: go_report_generator -reports <file/pattern>[;<file/pattern>...] [-output <dir>] ...")
 		fmt.Println("\nReport types:")
@@ -118,7 +117,6 @@ func main() {
 	}
 
 	var verbosity logging.VerbosityLevel
-	// ... (verbosity parsing remains the same) ...
 	switch strings.ToLower(*verbosityStr) {
 	case "verbose":
 		verbosity = logging.Verbose
