@@ -15,28 +15,6 @@ var supportedReportTypes = map[string]bool{
 	"Html":        true,
 }
 
-// IReportConfiguration interface remains the same.
-type IReportConfiguration interface {
-	ReportFiles() []string
-	TargetDirectory() string
-	SourceDirectories() []string
-	HistoryDirectory() string
-	ReportTypes() []string
-	Plugins() []string
-	AssemblyFilters() filtering.IFilter
-	ClassFilters() filtering.IFilter
-	FileFilters() filtering.IFilter
-	RiskHotspotAssemblyFilters() filtering.IFilter
-	RiskHotspotClassFilters() filtering.IFilter
-	VerbosityLevel() logging.VerbosityLevel
-	Tag() string
-	Title() string
-	License() string
-	InvalidReportFilePatterns() []string
-	IsVerbosityLevelValid() bool
-	Settings() *settings.Settings
-}
-
 // ReportConfiguration struct remains the same.
 type ReportConfiguration struct {
 	RFiles                        []string

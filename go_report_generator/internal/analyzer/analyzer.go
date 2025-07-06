@@ -6,14 +6,23 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser" // For parser.ParserResult
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
 )
+
+type MergerConfig interface {
+    // Let's analyze what it actually needs. Looking at your code,
+    // it uses SourceDirectories(). Let's assume it might also need filters.
+    // If it needs nothing, the interface would be empty or the parameter could be removed.
+    SourceDirectories() []string
+    AssemblyFilters() filtering.IFilter 
+}
+
 
 // MergeParserResults takes multiple ParserResult objects (potentially from different files
 // or even different parser types) and merges them into a single, unified model.SummaryResult.
 // The config is needed to access global settings or filters if they are applied at merge time
 // (though ideally filters are applied within each parser).
-func MergeParserResults(results []*parser.ParserResult, config reportconfig.IReportConfiguration) (*model.SummaryResult, error) {
+func MergeParserResults(results []*parser.ParserResult, config MergerConfig) (*model.SummaryResult, error) {
 	if len(results) == 0 {
 		return nil, fmt.Errorf("no parser results to merge")
 	}
