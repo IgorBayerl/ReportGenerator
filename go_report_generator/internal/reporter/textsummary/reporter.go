@@ -3,6 +3,7 @@ package textsummary
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,11 +18,16 @@ import (
 // TextReportBuilder generates a text summary report.
 type TextReportBuilder struct {
 	outputDir string
+	logger    *slog.Logger
 }
 
+
 // NewTextReportBuilder creates a new TextReportBuilder.
-func NewTextReportBuilder(outputDir string) reporter.ReportBuilder {
-	return &TextReportBuilder{outputDir: outputDir}
+func NewTextReportBuilder(outputDir string, logger *slog.Logger) reporter.ReportBuilder {
+	return &TextReportBuilder{
+		outputDir: outputDir,
+		logger:    logger,
+	}
 }
 
 // ReportType returns the type of report this builder generates.
@@ -49,10 +55,11 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 		return fmt.Errorf("failed to create report file: %w", err)
 	}
 	defer f.Close()
+	
+	b.logger.Info("Writing text summary to file", "path", outputPath)
 
 	sfw := &summaryFileWriter{f: f}
-	// Assuming decimalPlaces is 1 as per current settings default.
-	// For production, this should come from reportCtx.Settings().MaximumDecimalPlacesForCoverageQuotas
+
 	decimalPlaces := 1                     // Placeholder, should be from settings
 	decimalPlacesForPercentageDisplay := 0 // Placeholder, should be from settings
 

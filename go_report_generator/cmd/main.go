@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/analyzer"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/glob"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"             // Import the main parser package
 	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura" // Import for side-effect: registers CoberturaParser
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
@@ -20,47 +22,74 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
-// supportedReportTypes defines the available report formats
+// cliFlags holds the parsed command-line flags.
+type cliFlags struct {
+	reportsPatterns *string
+	outputDir       *string
+	reportTypes     *string
+	sourceDirs      *string
+	tag             *string
+	title           *string
+	verbosity       *string
+}
+
 var supportedReportTypes = map[string]bool{
 	"TextSummary": true,
 	"Html":        true,
 }
 
-// validateReportTypes checks if all requested report types are supported
-func validateReportTypes(types []string) error {
-	for _, t := range types {
-		trimmedType := strings.TrimSpace(t)
-		if !supportedReportTypes[trimmedType] {
-			return fmt.Errorf("unsupported report type: %s", trimmedType)
-		}
+// setupCliAndLogger parses command-line flags and initializes the structured logger.
+func setupCliAndLogger() (*cliFlags, *slog.Logger, logging.VerbosityLevel, error) {
+	flags := &cliFlags{
+		reportsPatterns: flag.String("report", "", "Coverage report file paths or patterns (semicolon-separated)"),
+		outputDir:       flag.String("output", "coverage-report", "Output directory for reports"),
+		reportTypes:     flag.String("reporttypes", "TextSummary,Html", "Report types to generate (comma-separated: TextSummary,Html)"),
+		sourceDirs:      flag.String("sourcedirs", "", "Source directories (comma-separated)"),
+		tag:             flag.String("tag", "", "Optional tag (e.g., build number)"),
+		title:           flag.String("title", "", "Optional report title. Default: 'Coverage Report'"),
+		verbosity:       flag.String("verbosity", "Info", "Logging verbosity level (Verbose, Info, Warning, Error, Off)"),
 	}
-	return nil
-}
-
-func main() {
-	start := time.Now()
-
-	reportsPatternsStr := flag.String("report", "", "Coverage report file paths or patterns (semicolon-separated, e.g., \"./coverage/*.xml;./more.xml\")")
-	outputDir := flag.String("output", "coverage-report", "Output directory for reports")
-	reportTypesStr := flag.String("reporttypes", "TextSummary", "Report types to generate (comma-separated: TextSummary,Html)")
-	sourceDirsStr := flag.String("sourcedirs", "", "Source directories (comma-separated)")
-	tag := flag.String("tag", "", "Optional tag (e.g., build number)")
-	title := flag.String("title", "", "Optional report title. Default: 'Coverage Report'")
-	verbosityStr := flag.String("verbosity", "Info", "Logging verbosity level (Verbose, Info, Warning, Error, Off)")
-
 	flag.Parse()
 
-	if *reportsPatternsStr == "" {
-		fmt.Println("Usage: go_report_generator -reports <file/pattern>[;<file/pattern>...] [-output <dir>] ...")
-		fmt.Println("\nReport types:")
-		for rt := range supportedReportTypes {
-			fmt.Printf("  %s\n", rt)
-		}
-		fmt.Println("\nVerbosity levels: Verbose, Info, Warning, Error, Off")
-		os.Exit(1)
+	var verbosityLevel logging.VerbosityLevel
+	var slogLevel slog.Leveler = slog.LevelInfo // Default
+
+	switch strings.ToLower(*flags.verbosity) {
+	case "verbose":
+		verbosityLevel = logging.Verbose
+		slogLevel = slog.LevelDebug
+	case "info":
+		verbosityLevel = logging.Info
+		slogLevel = slog.LevelInfo
+	case "warning":
+		verbosityLevel = logging.Warning
+		slogLevel = slog.LevelWarn
+	case "error":
+		verbosityLevel = logging.Error
+		slogLevel = slog.LevelError
+	case "off":
+		verbosityLevel = logging.Off
+		slogLevel = slog.Level(slog.LevelError + 42) // A level that will never be used
+	default:
+		return nil, nil, 0, fmt.Errorf("invalid verbosity level '%s'. Valid levels are Verbose, Info, Warning, Error, Off", *flags.verbosity)
 	}
 
-	reportFilePatterns := strings.Split(*reportsPatternsStr, ";")
+	handlerOptions := &slog.HandlerOptions{Level: slogLevel}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, handlerOptions))
+
+	// Set as global default for convenience in other packages if they don't get a logger passed explicitly.
+	slog.SetDefault(logger)
+
+	return flags, logger, verbosityLevel, nil
+}
+
+// resolveAndValidateInputs processes input patterns and validates them.
+func resolveAndValidateInputs(logger *slog.Logger, flags *cliFlags) ([]string, []string, error) {
+	if *flags.reportsPatterns == "" {
+		return nil, nil, fmt.Errorf("missing required -report flag. Usage: go_report_generator -reports <file/pattern>...")
+	}
+
+	reportFilePatterns := strings.Split(*flags.reportsPatterns, ";")
 	var actualReportFiles []string
 	var invalidPatterns []string
 	seenFiles := make(map[string]struct{})
@@ -72,22 +101,22 @@ func main() {
 		}
 		expandedFiles, err := glob.GetFiles(trimmedPattern)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Error expanding report file pattern '%s': %v\n", trimmedPattern, err)
+			logger.Warn("Error expanding report file pattern", "pattern", trimmedPattern, "error", err)
 			invalidPatterns = append(invalidPatterns, trimmedPattern)
 			continue
 		}
 		if len(expandedFiles) == 0 {
-			fmt.Fprintf(os.Stderr, "Warning: No files found for report pattern '%s'\n", trimmedPattern)
+			logger.Warn("No files found for report pattern", "pattern", trimmedPattern)
 			invalidPatterns = append(invalidPatterns, trimmedPattern)
 		}
 		for _, file := range expandedFiles {
 			absFile, _ := filepath.Abs(file)
-			if _, found := seenFiles[absFile]; !found {
+			if _, exists := seenFiles[absFile]; !exists {
 				if stat, err := os.Stat(absFile); err == nil && !stat.IsDir() {
 					actualReportFiles = append(actualReportFiles, absFile)
 					seenFiles[absFile] = struct{}{}
 				} else if err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: Could not stat file from pattern '%s': %s - %v\n", trimmedPattern, absFile, err)
+					logger.Warn("Could not stat file from pattern", "pattern", trimmedPattern, "file", absFile, "error", err)
 					invalidPatterns = append(invalidPatterns, file)
 				}
 			}
@@ -95,171 +124,187 @@ func main() {
 	}
 
 	if len(actualReportFiles) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: No valid report files found after expanding patterns.\n")
-		if len(invalidPatterns) > 0 {
-			fmt.Fprintf(os.Stderr, "Patterns that yielded no files or errors: %s\n", strings.Join(invalidPatterns, ", "))
-		}
-		os.Exit(1)
+		return nil, invalidPatterns, fmt.Errorf("no valid report files found after expanding patterns")
 	}
 
-	requestedTypes := strings.Split(*reportTypesStr, ",")
-	if err := validateReportTypes(requestedTypes); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	logger.Info("Found report files", "count", len(actualReportFiles))
+	logger.Debug("Report file list", "files", strings.Join(actualReportFiles, ", "))
+	return actualReportFiles, invalidPatterns, nil
+}
+
+// createReportConfiguration assembles the main configuration object for the generator.
+func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel, actualReportFiles, invalidPatterns []string) (*reportconfig.ReportConfiguration, error) {
+	requestedTypes := strings.Split(*flags.reportTypes, ",")
+	for _, t := range requestedTypes {
+		trimmedType := strings.TrimSpace(t)
+		if !supportedReportTypes[trimmedType] {
+			return nil, fmt.Errorf("unsupported report type: %s", trimmedType)
+		}
 	}
 
 	var sourceDirsList []string
-	if *sourceDirsStr != "" {
-		sourceDirsList = strings.Split(*sourceDirsStr, ",")
+	if *flags.sourceDirs != "" {
+		sourceDirsList = strings.Split(*flags.sourceDirs, ",")
 		for i, dir := range sourceDirsList {
 			sourceDirsList[i] = strings.TrimSpace(dir)
 		}
 	}
 
-	var verbosity logging.VerbosityLevel
-	switch strings.ToLower(*verbosityStr) {
-	case "verbose":
-		verbosity = logging.Verbose
-	case "info":
-		verbosity = logging.Info
-	case "warning":
-		verbosity = logging.Warning
-	case "error":
-		verbosity = logging.Error
-	case "off":
-		verbosity = logging.Off
-	default:
-		fmt.Fprintf(os.Stderr, "Error: Invalid verbosity level '%s'. Valid levels are Verbose, Info, Warning, Error, Off.\n", *verbosityStr)
-		os.Exit(1)
-	}
-
-	currentSettings := settings.NewSettings() // Create settings instance
-	actualTitle := *title
+	actualTitle := *flags.title
 	if actualTitle == "" {
 		actualTitle = "Coverage Report"
 	}
 
-	// Collect raw filter strings from CLI (or config file if you add that later)
-	// For now, assuming they are not yet CLI flags, so passing empty slices.
-	// If you add CLI flags for filters, parse them here.
-	assemblyFilterStrings := []string{}   // Placeholder: populate from CLI flags if available
-	classFilterStrings := []string{}      // Placeholder
-	fileFilterStrings := []string{}       // Placeholder
-	rhAssemblyFilterStrings := []string{} // Placeholder
-	rhClassFilterStrings := []string{}    // Placeholder
-
-	reportConfig, err := reportconfig.NewReportConfiguration( // Updated call
+	return reportconfig.NewReportConfiguration(
 		actualReportFiles,
-		*outputDir,
+		*flags.outputDir,
 		sourceDirsList,
 		"", // historyDir
 		requestedTypes,
-		*tag,
+		*flags.tag,
 		actualTitle,
 		verbosity,
 		invalidPatterns,
-		assemblyFilterStrings,
-		classFilterStrings,
-		fileFilterStrings,
-		rhAssemblyFilterStrings,
-		rhClassFilterStrings,
-		currentSettings, // Pass settings
+		[]string{}, []string{}, []string{}, []string{}, []string{}, // empty filters for now
+		settings.NewSettings(),
 	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating report configuration: %v\n", err)
-		os.Exit(1)
-	}
+}
 
-	// Create ReportContext once, after initial config and settings are ready.
-	reportCtx := reporting.NewReportContext(reportConfig, currentSettings)
-
+// parseAndMergeReports handles the parsing of all found report files and merges them into a single result.
+func parseAndMergeReports(logger *slog.Logger, reportCtx reporting.IReportContext) (*model.SummaryResult, error) {
 	var parserResults []*parser.ParserResult
-	processedAllFilesSuccessfully := true
+	var parserErrors []string
+
+	reportConfig := reportCtx.ReportConfiguration()
+	actualReportFiles := reportConfig.ReportFiles()
 
 	for _, reportFile := range actualReportFiles {
-		fmt.Printf("Attempting to parse report file: %s\n", reportFile)
+		logger.Info("Attempting to parse report file", "file", reportFile)
 		parserInstance, err := parser.FindParserForFile(reportFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %v for file %s. Skipping.\n", err, reportFile)
-			processedAllFilesSuccessfully = false
+			msg := fmt.Sprintf("no suitable parser found for file %s: %v", reportFile, err)
+			parserErrors = append(parserErrors, msg)
+			logger.Warn(msg)
 			continue
 		}
 
-		fmt.Printf("Using parser: %s for file %s\n", parserInstance.Name(), reportFile)
-		// Pass reportCtx to the parser's Parse method
+		logger.Info("Using parser for file", "parser", parserInstance.Name(), "file", reportFile)
 		result, err := parserInstance.Parse(reportFile, reportCtx)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing file %s with %s: %v. Skipping.\n", reportFile, parserInstance.Name(), err)
-			processedAllFilesSuccessfully = false
+			msg := fmt.Sprintf("error parsing file %s with %s: %v", reportFile, parserInstance.Name(), err)
+			parserErrors = append(parserErrors, msg)
+			logger.Error(msg)
 			continue
 		}
 		parserResults = append(parserResults, result)
-		fmt.Printf("Successfully parsed: %s\n", reportFile)
+		logger.Info("Successfully parsed file", "file", reportFile)
 
-		// Update reportConfig's source directories if new ones are found by the parser
-		// This part needs careful thought: if reportConfig is immutable or if this update is safe.
-		// For now, this assumes reportConfig's source dirs might be updated.
-		// A better approach might be to collect all source dirs from all parserResults
-		// and then update the single reportCtx or final SummaryResult.
-		currentConfig := reportCtx.ReportConfiguration()
-		if len(currentConfig.SourceDirectories()) == 0 && len(result.SourceDirectories) > 0 {
-			fmt.Printf("Note: Report '%s' specified source directories: %v. Updating configuration for context.\n", reportFile, result.SourceDirectories)
-
-			// Re-create or update the config and then the context
-			// This is a bit clumsy; ideally, ReportConfiguration would be mutable or source dirs handled centrally.
+		// This logic dynamically updates the context if a report file specifies source directories.
+		// It's a bit of a side effect but kept for feature parity.
+		if len(reportConfig.SourceDirectories()) == 0 && len(result.SourceDirectories) > 0 {
+			logger.Info("Report specified source directories, updating configuration for context", "file", reportFile, "dirs", result.SourceDirectories)
 			updatedConfig, confErr := reportconfig.NewReportConfiguration(
-				actualReportFiles, *outputDir, result.SourceDirectories, "",
-				requestedTypes, *tag, actualTitle, verbosity, invalidPatterns,
-				assemblyFilterStrings, classFilterStrings, fileFilterStrings,
-				rhAssemblyFilterStrings, rhClassFilterStrings, currentSettings,
+				reportConfig.ReportFiles(), reportConfig.TargetDirectory(), result.SourceDirectories, reportConfig.HistoryDirectory(),
+				reportConfig.ReportTypes(), reportConfig.Tag(), reportConfig.Title(), reportConfig.VerbosityLevel(), reportConfig.InvalidReportFilePatterns(),
+				[]string{}, []string{}, []string{}, []string{}, []string{}, reportCtx.Settings(),
 			)
 			if confErr != nil {
-				fmt.Fprintf(os.Stderr, "Error updating report configuration with new source dirs: %v\n", confErr)
-			} else {
-				reportCtx = reporting.NewReportContext(updatedConfig, currentSettings) // Update the context for subsequent operations
+				return nil, fmt.Errorf("error updating report configuration with new source dirs: %w", confErr)
 			}
+			reportCtx = reporting.NewReportContext(updatedConfig, reportCtx.Settings(), logger)
+			reportConfig = updatedConfig // Update local variable for next loop iteration
 		}
 	}
 
 	if len(parserResults) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: No coverage reports could be parsed successfully.\n")
-		os.Exit(1)
+		errorMsg := "no coverage reports could be parsed successfully"
+		if len(parserErrors) > 0 {
+			errorMsg = fmt.Sprintf("%s. Errors:\n- %s", errorMsg, strings.Join(parserErrors, "\n- "))
+		}
+		return nil, fmt.Errorf(errorMsg)
 	}
 
-	fmt.Printf("Merging %d parsed report(s)...\n", len(parserResults))
-	// Pass reportCtx to MergeParserResults as well, it might need config/settings.
-	summaryResult, err := analyzer.MergeParserResults(parserResults, reportCtx.ReportConfiguration())
+	logger.Info("Merging parsed reports", "count", len(parserResults))
+	summaryResult, err := analyzer.MergeParserResults(parserResults, reportConfig)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to merge parser results: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to merge parser results: %w", err)
 	}
-	fmt.Printf("Coverage data merged and analyzed.\n")
+	logger.Info("Coverage data merged and analyzed")
 
-	fmt.Printf("Generating reports in: %s\n", *outputDir)
-	if err := os.MkdirAll(*outputDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
-		os.Exit(1)
+	return summaryResult, nil
+}
+
+// generateReports creates the final report files based on the summary result.
+func generateReports(logger *slog.Logger, reportCtx reporting.IReportContext, summaryResult *model.SummaryResult) error {
+	reportConfig := reportCtx.ReportConfiguration()
+	outputDir := reportConfig.TargetDirectory()
+
+	logger.Info("Generating reports", "directory", outputDir)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	for _, reportType := range requestedTypes {
-		fmt.Printf("Generating %s report...\n", reportType)
-		switch strings.TrimSpace(reportType) {
+	for _, reportType := range reportConfig.ReportTypes() {
+		trimmedType := strings.TrimSpace(reportType)
+		logger.Info("Generating report", "type", trimmedType)
+
+		switch trimmedType {
 		case "TextSummary":
-			textBuilder := textsummary.NewTextReportBuilder(*outputDir)
+			textBuilder := textsummary.NewTextReportBuilder(outputDir, logger)
 			if err := textBuilder.CreateReport(summaryResult); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to generate text report: %v\n", err)
+				return fmt.Errorf("failed to generate text report: %w", err)
 			}
 		case "Html":
-			htmlBuilder := htmlreport.NewHtmlReportBuilder(*outputDir, reportCtx)
+			htmlBuilder := htmlreport.NewHtmlReportBuilder(outputDir, reportCtx)
 			if err := htmlBuilder.CreateReport(summaryResult); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to generate HTML report: %v\n", err)
+				return fmt.Errorf("failed to generate HTML report: %w", err)
 			}
 		}
 	}
+	return nil
+}
 
-	if !processedAllFilesSuccessfully {
-		fmt.Println("\nWarning: Some report files could not be processed. See messages above.")
+// run is the main application logic.
+func run() error {
+	flags, logger, verbosity, err := setupCliAndLogger()
+	if err != nil {
+		return err
 	}
-	fmt.Printf("\nReport generation completed in %.2f seconds\n", time.Since(start).Seconds())
 
+	actualReportFiles, invalidPatterns, err := resolveAndValidateInputs(logger, flags)
+	if err != nil {
+		if len(invalidPatterns) > 0 {
+			return fmt.Errorf("%w. Invalid patterns: %s", err, strings.Join(invalidPatterns, ", "))
+		}
+		return err
+	}
+
+	reportConfig, err := createReportConfiguration(flags, verbosity, actualReportFiles, invalidPatterns)
+	if err != nil {
+		return err
+	}
+
+	reportCtx := reporting.NewReportContext(reportConfig, settings.NewSettings(), logger)
+
+	summaryResult, err := parseAndMergeReports(logger, reportCtx)
+	if err != nil {
+		return err
+	}
+
+	return generateReports(logger, reportCtx, summaryResult)
+}
+
+func main() {
+	start := time.Now()
+
+	// Create a minimal default logger for the main function itself.
+	// This ensures that if run() panics or fails very early, we still have a logger.
+	mainLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	if err := run(); err != nil {
+		mainLogger.Error("Operation failed", "error", err)
+		os.Exit(1)
+	}
+
+	mainLogger.Info("Report generation completed successfully", "duration", time.Since(start).Round(time.Millisecond))
 }
