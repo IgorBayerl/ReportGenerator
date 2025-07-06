@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -31,6 +32,7 @@ type cliFlags struct {
 	tag             *string
 	title           *string
 	verbosity       *string
+	logFile         *string // Add logFile flag holder
 }
 
 var supportedReportTypes = map[string]bool{
@@ -39,7 +41,7 @@ var supportedReportTypes = map[string]bool{
 }
 
 // setupCliAndLogger parses command-line flags and initializes the structured logger.
-func setupCliAndLogger() (*cliFlags, *slog.Logger, logging.VerbosityLevel, error) {
+func setupCliAndLogger() (*cliFlags, *slog.Logger, logging.VerbosityLevel, io.Closer, error) {
 	flags := &cliFlags{
 		reportsPatterns: flag.String("report", "", "Coverage report file paths or patterns (semicolon-separated)"),
 		outputDir:       flag.String("output", "coverage-report", "Output directory for reports"),
@@ -48,6 +50,7 @@ func setupCliAndLogger() (*cliFlags, *slog.Logger, logging.VerbosityLevel, error
 		tag:             flag.String("tag", "", "Optional tag (e.g., build number)"),
 		title:           flag.String("title", "", "Optional report title. Default: 'Coverage Report'"),
 		verbosity:       flag.String("verbosity", "Info", "Logging verbosity level (Verbose, Info, Warning, Error, Off)"),
+		logFile:         flag.String("logfile", "", "Redirect logs to a file instead of the console."), // Define the new flag
 	}
 	flag.Parse()
 
@@ -71,16 +74,30 @@ func setupCliAndLogger() (*cliFlags, *slog.Logger, logging.VerbosityLevel, error
 		verbosityLevel = logging.Off
 		slogLevel = slog.Level(slog.LevelError + 42) // A level that will never be used
 	default:
-		return nil, nil, 0, fmt.Errorf("invalid verbosity level '%s'. Valid levels are Verbose, Info, Warning, Error, Off", *flags.verbosity)
+		return nil, nil, 0, nil, fmt.Errorf("invalid verbosity level '%s'. Valid levels are Verbose, Info, Warning, Error, Off", *flags.verbosity)
+	}
+
+	// Determine the output writer for the logger
+	var logOutput io.Writer = os.Stderr
+	var logFileCloser io.Closer // To hold the file handle if we open one
+
+	if *flags.logFile != "" {
+		f, err := os.OpenFile(*flags.logFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+		if err != nil {
+			return nil, nil, 0, nil, fmt.Errorf("failed to open log file %s: %w", *flags.logFile, err)
+		}
+		logOutput = f
+		logFileCloser = f // We need to close this file later
 	}
 
 	handlerOptions := &slog.HandlerOptions{Level: slogLevel}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, handlerOptions))
+	// Use the determined logOutput (either os.Stderr or the file)
+	logger := slog.New(slog.NewTextHandler(logOutput, handlerOptions))
 
 	// Set as global default for convenience in other packages if they don't get a logger passed explicitly.
 	slog.SetDefault(logger)
 
-	return flags, logger, verbosityLevel, nil
+	return flags, logger, verbosityLevel, logFileCloser, nil
 }
 
 // resolveAndValidateInputs processes input patterns and validates them.
@@ -266,9 +283,13 @@ func generateReports(logger *slog.Logger, reportCtx reporting.IReportContext, su
 
 // run is the main application logic.
 func run() error {
-	flags, logger, verbosity, err := setupCliAndLogger()
+	flags, logger, verbosity, logFileCloser, err := setupCliAndLogger()
 	if err != nil {
 		return err
+	}
+	// If a log file was opened, ensure it gets closed when this function exits.
+	if logFileCloser != nil {
+		defer logFileCloser.Close()
 	}
 
 	actualReportFiles, invalidPatterns, err := resolveAndValidateInputs(logger, flags)
@@ -297,14 +318,13 @@ func run() error {
 func main() {
 	start := time.Now()
 
-	// Create a minimal default logger for the main function itself.
-	// This ensures that if run() panics or fails very early, we still have a logger.
-	mainLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-
 	if err := run(); err != nil {
-		mainLogger.Error("Operation failed", "error", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	mainLogger.Info("Report generation completed successfully", "duration", time.Since(start).Round(time.Millisecond))
+	// We can't use the logger from `run` here as it's out of scope.
+	// But since `slog.SetDefault` was called, we can use the global logger
+	// for the final success message.
+	slog.Info("Report generation completed successfully", "duration", time.Since(start).Round(time.Millisecond))
 }
