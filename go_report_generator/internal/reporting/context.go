@@ -23,7 +23,7 @@ type ReportContext struct {
 
 func (rc *ReportContext) ReportConfiguration() reportconfig.IReportConfiguration { return rc.Cfg }
 func (rc *ReportContext) Settings() *settings.Settings                           { return rc.Stngs }
-func (rc *ReportContext) Logger() *slog.Logger                                   { return rc.L } 
+func (rc *ReportContext) Logger() *slog.Logger                                   { return rc.L }
 
 // NewReportContext creates a new ReportContext.
 // Update the constructor to accept a logger.

@@ -1,7 +1,7 @@
 package htmlreport
 
 import (
-	"fmt"
+	"fmt" // fmt is still needed for fmt.Errorf
 	"html/template"
 	"os"
 	"path/filepath"
@@ -41,7 +41,7 @@ type HtmlReportBuilder struct {
 	classReportFilenames       map[string]string
 	tempExistingLowerFilenames map[string]struct{}
 
-	combinedAngularJsFile              string // To store "reportgenerator.combined.js"
+	combinedAngularJsFile string // To store "reportgenerator.combined.js"
 }
 
 func NewHtmlReportBuilder(outputDir string, reportCtx reporting.IReportContext) *HtmlReportBuilder {
@@ -161,13 +161,22 @@ func (b *HtmlReportBuilder) renderClassDetailPages(report *model.SummaryResult) 
 			classReportFilename, ok := b.classReportFilenames[classKey]
 
 			if !ok || classReportFilename == "" {
-				fmt.Fprintf(os.Stderr, "Error: Class report filename not found for %s in %s. Skipping detail page.\n", classModel.DisplayName, assemblyModel.Name)
+				b.ReportContext.Logger().Error(
+					"Class report filename not found, skipping detail page generation",
+					"class", classModel.DisplayName,
+					"assembly", assemblyModel.Name,
+				)
 				continue
 			}
 
 			err := b.generateClassDetailHTML(&classModel, classReportFilename, b.tag)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to generate detail page for class '%s' (file: %s): %v\n", classModel.DisplayName, classReportFilename, err)
+				b.ReportContext.Logger().Error(
+					"Failed to generate detail page for class",
+					"class", classModel.DisplayName,
+					"file", classReportFilename,
+					"error", err,
+				)
 			}
 		}
 	}

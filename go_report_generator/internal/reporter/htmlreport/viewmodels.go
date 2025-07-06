@@ -21,12 +21,12 @@ type AngularClassViewModel struct {
 	CoveredMethods            int                                `json:"cm"`
 	FullyCoveredMethods       int                                `json:"fcm"`
 	TotalMethods              int                                `json:"tm"`
-	LineCoverageHistory       []float64                          `json:"lch"` 
-	BranchCoverageHistory     []float64                          `json:"bch"` 
-	MethodCoverageHistory     []float64                          `json:"mch"` 
+	LineCoverageHistory       []float64                          `json:"lch"`
+	BranchCoverageHistory     []float64                          `json:"bch"`
+	MethodCoverageHistory     []float64                          `json:"mch"`
 	FullMethodCoverageHistory []float64                          `json:"mfch"`
-	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc"` 
-	Metrics                   map[string]float64                 `json:"metrics,omitempty"` 
+	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc"`
+	Metrics                   map[string]float64                 `json:"metrics,omitempty"`
 }
 
 // AngularHistoricCoverageViewModel corresponds to individual historic coverage data points.
@@ -158,7 +158,7 @@ type ClassDetailData struct {
 	AngularRuntimeJsFile   string
 	AngularPolyfillsJsFile string
 	AngularMainJsFile      string
-	CombinedAngularJsFile string
+	CombinedAngularJsFile  string
 
 	// For window.* JSON objects
 	ClassDetailJSON                    template.JS // This will contain AngularClassDetailViewModel
@@ -190,7 +190,7 @@ type ClassViewModelForDetail struct {
 	BranchCoverageRatioTextForDisplay      string
 	MethodCoveragePercentageForDisplay     string
 	MethodCoveragePercentageBarValue       int
-	FullMethodCoveragePercentageForDisplay string 
+	FullMethodCoveragePercentageForDisplay string
 	CoveredMethods                         int
 	FullyCoveredMethods                    int
 	TotalMethods                           int

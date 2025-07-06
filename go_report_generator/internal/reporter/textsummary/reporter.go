@@ -21,7 +21,6 @@ type TextReportBuilder struct {
 	logger    *slog.Logger
 }
 
-
 // NewTextReportBuilder creates a new TextReportBuilder.
 func NewTextReportBuilder(outputDir string, logger *slog.Logger) reporter.ReportBuilder {
 	return &TextReportBuilder{
@@ -55,7 +54,7 @@ func (b *TextReportBuilder) CreateReport(summary *model.SummaryResult) error {
 		return fmt.Errorf("failed to create report file: %w", err)
 	}
 	defer f.Close()
-	
+
 	b.logger.Info("Writing text summary to file", "path", outputPath)
 
 	sfw := &summaryFileWriter{f: f}
