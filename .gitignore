@@ -29,3 +29,4 @@ Testprojects/Go/coverage.cobertura.xml
 Testprojects/Go/coverage.out
 
 reports
+.vscode/settings.json
