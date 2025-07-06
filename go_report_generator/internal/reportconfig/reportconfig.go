@@ -16,18 +16,18 @@ type IReportConfiguration interface {
 	HistoryDirectory() string
 	ReportTypes() []string
 	Plugins() []string
-	AssemblyFilters() filtering.IFilter            
-	ClassFilters() filtering.IFilter               
-	FileFilters() filtering.IFilter                
-	RiskHotspotAssemblyFilters() filtering.IFilter 
-	RiskHotspotClassFilters() filtering.IFilter    
+	AssemblyFilters() filtering.IFilter
+	ClassFilters() filtering.IFilter
+	FileFilters() filtering.IFilter
+	RiskHotspotAssemblyFilters() filtering.IFilter
+	RiskHotspotClassFilters() filtering.IFilter
 	VerbosityLevel() logging.VerbosityLevel
 	Tag() string
 	Title() string
 	License() string
 	InvalidReportFilePatterns() []string
 	IsVerbosityLevelValid() bool
-	Settings() *settings.Settings 
+	Settings() *settings.Settings
 }
 
 // ReportConfiguration is a concrete implementation of IReportConfiguration.
@@ -38,18 +38,18 @@ type ReportConfiguration struct {
 	HDirectory                    string
 	RTypes                        []string
 	PluginsList                   []string
-	AssemblyFilterInstance        filtering.IFilter 
-	ClassFilterInstance           filtering.IFilter 
-	FileFilterInstance            filtering.IFilter 
-	RiskHotspotAssemblyFilterInst filtering.IFilter 
-	RiskHotspotClassFilterInst    filtering.IFilter 
+	AssemblyFilterInstance        filtering.IFilter
+	ClassFilterInstance           filtering.IFilter
+	FileFilterInstance            filtering.IFilter
+	RiskHotspotAssemblyFilterInst filtering.IFilter
+	RiskHotspotClassFilterInst    filtering.IFilter
 	VLevel                        logging.VerbosityLevel
 	CfgTag                        string
 	CfgTitle                      string
 	CfgLicense                    string
 	InvalidPatterns               []string
 	VLevelValid                   bool
-	App                           *settings.Settings 
+	App                           *settings.Settings
 }
 
 // Implement IReportConfiguration methods
@@ -74,7 +74,7 @@ func (rc *ReportConfiguration) Title() string                          { return 
 func (rc *ReportConfiguration) License() string                        { return rc.CfgLicense }
 func (rc *ReportConfiguration) InvalidReportFilePatterns() []string    { return rc.InvalidPatterns }
 func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return rc.VLevelValid }
-func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App } 
+func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App }
 
 // NewReportConfiguration is a constructor for ReportConfiguration.
 func NewReportConfiguration(
@@ -93,7 +93,7 @@ func NewReportConfiguration(
 	fileFilterStrings []string,
 	riskHotspotAssemblyFilterStrings []string,
 	riskHotspotClassFilterStrings []string,
-	appSettings *settings.Settings, 
+	appSettings *settings.Settings,
 ) (*ReportConfiguration, error) { // Return error for filter creation issues
 	if len(reportTypes) == 0 {
 		reportTypes = []string{"Html"} // Default

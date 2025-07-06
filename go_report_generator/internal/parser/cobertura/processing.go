@@ -3,7 +3,6 @@ package cobertura
 import (
 	"fmt"
 	"math"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -88,7 +87,13 @@ func (cp *CoberturaParser) processCoberturaPackageXML(
 		}
 		classModel, err := cp.processCoberturaClassGroup(classXMLGroup, assembly.Name, sourceDirs, uniqueFilePathsForGrandTotalLines, assemblyProcessedFilePaths, context)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: error processing class group '%s' in assembly '%s': %v\n", logicalName, assembly.Name, err)
+			logger := context.Logger()
+			logger.Warn(
+				"CoberturaParser: error processing class group",
+				"classGroup", logicalName,
+				"assembly", assembly.Name,
+				"error", err,
+			)
 			continue
 		}
 		if classModel != nil {
@@ -200,7 +205,13 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 				currentCodeFile.TotalLines = lineCount
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: source file '%s' for class '%s' not found. Line content will be missing.\n", filePath, logicalName)
+			logger := context.Logger() // Get logger from context
+			logger.Warn(
+				"Source file not found, line content will be missing",
+				"parser", "Cobertura",
+				"class", logicalName,
+				"file", filePath,
+			)
 		}
 
 		maxLineNumInFile := 0

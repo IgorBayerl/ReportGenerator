@@ -1,9 +1,10 @@
 package htmlreport
 
 import (
-	"fmt"
+	"fmt" // Keep for fmt.Errorf
 	"io"
 	"io/fs"
+	"log/slog" // Add slog
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 		return fmt.Errorf("missing critical Angular assets from index.html (css: '%s', runtime: '%s', main: '%s')", cssFile, runtimeJsFile, mainJsFile)
 	}
 
-	b.angularCssFile = cssFile 
+	b.angularCssFile = cssFile
 
 	// Concatenate JS files
 	var jsBuilder strings.Builder
@@ -123,7 +124,12 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 
 		srcFile, err := os.Open(srcPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to open source asset %s (path: %s): %v. Skipping.\n", fileName, srcPath, err)
+			slog.Warn(
+				"Failed to open source asset, skipping",
+				"asset", fileName,
+				"path", srcPath,
+				"error", err,
+			)
 			continue
 		}
 		defer srcFile.Close()
@@ -141,12 +147,18 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 
 	customCSSBytes, err := os.ReadFile(filepath.Join(assetsDir, "custom.css"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read custom.css for combining into report.css: %v\n", err)
+		slog.Warn(
+			"Failed to read custom.css for combining into report.css",
+			"error", err,
+		)
 	}
 
 	customDarkCSSBytes, err := os.ReadFile(filepath.Join(assetsDir, "custom_dark.css"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read custom_dark.css for combining into report.css: %v\n", err)
+		slog.Warn(
+			"Failed to read custom_dark.css for combining into report.css",
+			"error", err,
+		)
 	}
 
 	var combinedCSS []byte
@@ -164,7 +176,7 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 			return fmt.Errorf("failed to write combined report.css: %w", err)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "Warning: custom.css and custom_dark.css were not found; report.css may be missing or incomplete.\n")
+		slog.Warn("custom.css and custom_dark.css were not found; report.css may be missing or incomplete")
 	}
 
 	return nil
@@ -225,7 +237,11 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 			srcFileInfo, statErr := d.Info()
 			if statErr == nil {
 				if chmodErr := os.Chmod(dstPath, srcFileInfo.Mode()); chmodErr != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to set permissions on %s: %v\n", dstPath, chmodErr)
+					slog.Warn(
+						"Failed to set permissions on copied asset",
+						"path", dstPath,
+						"error", chmodErr,
+					)
 				}
 			}
 		}

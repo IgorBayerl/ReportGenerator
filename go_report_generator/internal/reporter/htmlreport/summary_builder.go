@@ -141,8 +141,6 @@ func (b *HtmlReportBuilder) buildAngularAssemblyViewModelsForSummary(report *mod
 	return angularAssemblies, nil
 }
 
-
-
 func (b *HtmlReportBuilder) buildAngularClassViewModelForSummary(class *model.Class, reportPath string) AngularClassViewModel {
 	angularClass := AngularClassViewModel{
 		Name:                      class.DisplayName,
@@ -199,15 +197,14 @@ func (b *HtmlReportBuilder) buildAngularClassViewModelForSummary(class *model.Cl
 	return angularClass
 }
 
-
 func (b *HtmlReportBuilder) buildAngularHistoricCoverageViewModel(hist *model.HistoricCoverage) AngularHistoricCoverageViewModel {
 	angularHist := AngularHistoricCoverageViewModel{
-		ExecutionTime:  time.Unix(hist.ExecutionTime, 0).Format("2006-01-02"), // Simplified
-		CoveredLines:   hist.CoveredLines,
-		CoverableLines: hist.CoverableLines,
-		TotalLines:     hist.TotalLines,
-        CoveredBranches: hist.CoveredBranches,
-	    TotalBranches:   hist.TotalBranches,
+		ExecutionTime:   time.Unix(hist.ExecutionTime, 0).Format("2006-01-02"), // Simplified
+		CoveredLines:    hist.CoveredLines,
+		CoverableLines:  hist.CoverableLines,
+		TotalLines:      hist.TotalLines,
+		CoveredBranches: hist.CoveredBranches,
+		TotalBranches:   hist.TotalBranches,
 		// FIXME: Populate these from your model.HistoricCoverage if it has method coverage history
 		// CoveredMethods: hist.CoveredMethods,
 		// FullyCoveredMethods: hist.FullyCoveredMethods,
@@ -224,10 +221,10 @@ func (b *HtmlReportBuilder) buildAngularHistoricCoverageViewModel(hist *model.Hi
 		angularHist.BranchCoverageQuota = (float64(hist.CoveredBranches) / float64(hist.TotalBranches)) * 100.0
 	}
 
-    // FIXME: Update these based on fields in your model.HistoricCoverage
+	// FIXME: Update these based on fields in your model.HistoricCoverage
 	angularHist.MethodCoverageQuota = -1.0
 	angularHist.FullMethodCoverageQuota = -1.0
-    // if hist.TotalMethods > 0 {
+	// if hist.TotalMethods > 0 {
 	// 	angularHist.MethodCoverageQuota = (float64(hist.CoveredMethods) / float64(hist.TotalMethods)) * 100.0
 	// 	angularHist.FullMethodCoverageQuota = (float64(hist.FullyCoveredMethods) / float64(hist.TotalMethods)) * 100.0
 	// }
@@ -267,30 +264,27 @@ func (b *HtmlReportBuilder) setRiskHotspotsJSON(angularRiskHotspots []AngularRis
 	return nil
 }
 
-
-
-
 func (b *HtmlReportBuilder) buildSummaryPageData(report *model.SummaryResult, angularAssembliesForSummary []AngularAssemblyViewModel, angularRiskHotspots []AngularRiskHotspotViewModel) (SummaryPageData, error) {
 	log.Printf("buildSummaryPageData: b.assembliesJSON before assigning to SummaryPageData: %s\n", b.assembliesJSON) // Log
 
 	data := SummaryPageData{
-		ReportTitle:                           b.reportTitle,
-		AppVersion:                            "0.0.1",
-		CurrentDateTime:                       time.Now().Format("02/01/2006 - 15:04:05"),
-		Translations:                          b.translations,
-		HasRiskHotspots:                       len(angularRiskHotspots) > 0,
-		HasAssemblies:                         len(report.Assemblies) > 0,
-		AssembliesJSON:                        b.assembliesJSON,
-		RiskHotspotsJSON:                      b.riskHotspotsJSON,
-		MetricsJSON:                           b.metricsJSON,
-		RiskHotspotMetricsJSON:                b.riskHotspotMetricsJSON,
-		HistoricCoverageExecutionTimesJSON:    b.historicCoverageExecutionTimesJSON,
-		TranslationsJSON:                      b.translationsJSON,
-		AngularCssFile:                        b.angularCssFile,
-		CombinedAngularJsFile:                 b.combinedAngularJsFile,
-		AngularRuntimeJsFile:                  b.angularRuntimeJsFile,
-		AngularPolyfillsJsFile:                b.angularPolyfillsJsFile,
-		AngularMainJsFile:                     b.angularMainJsFile,
+		ReportTitle:                        b.reportTitle,
+		AppVersion:                         "0.0.1",
+		CurrentDateTime:                    time.Now().Format("02/01/2006 - 15:04:05"),
+		Translations:                       b.translations,
+		HasRiskHotspots:                    len(angularRiskHotspots) > 0,
+		HasAssemblies:                      len(report.Assemblies) > 0,
+		AssembliesJSON:                     b.assembliesJSON,
+		RiskHotspotsJSON:                   b.riskHotspotsJSON,
+		MetricsJSON:                        b.metricsJSON,
+		RiskHotspotMetricsJSON:             b.riskHotspotMetricsJSON,
+		HistoricCoverageExecutionTimesJSON: b.historicCoverageExecutionTimesJSON,
+		TranslationsJSON:                   b.translationsJSON,
+		AngularCssFile:                     b.angularCssFile,
+		CombinedAngularJsFile:              b.combinedAngularJsFile,
+		AngularRuntimeJsFile:               b.angularRuntimeJsFile,
+		AngularPolyfillsJsFile:             b.angularPolyfillsJsFile,
+		AngularMainJsFile:                  b.angularMainJsFile,
 
 		BranchCoverageAvailable:               b.branchCoverageAvailable,
 		MethodCoverageAvailable:               b.methodCoverageAvailable,
@@ -400,4 +394,3 @@ func (b *HtmlReportBuilder) buildSummaryCards(report *model.SummaryResult) []Car
 	})
 	return cards
 }
-

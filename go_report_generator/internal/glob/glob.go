@@ -12,8 +12,9 @@
 package glob
 
 import (
-	"fmt"
+	"fmt" // Keep fmt for fmt.Errorf and fmt.Sprintf
 	"io/fs"
+	"log/slog" // Add slog
 	"os"
 	"path/filepath"
 	"regexp"
@@ -113,7 +114,17 @@ func (g *Glob) Expand() ([]string, error) {
 // It uses a cache to store and retrieve compiled regexes or literal patterns
 // to avoid redundant compilations.
 func (g *Glob) createRegexOrString(patternSegment string) (*RegexOrString, error) {
-	cacheKey := patternSegment + "|" + fmt.Sprintf("%t", g.IgnoreCase)
+	// Create a cache key that correctly represents the case-sensitivity.
+	// Using string concatenation instead of fmt.Sprintf for minor optimization.
+	var cacheKeyBuilder strings.Builder
+	cacheKeyBuilder.WriteString(patternSegment)
+	cacheKeyBuilder.WriteRune('|')
+	if g.IgnoreCase {
+		cacheKeyBuilder.WriteString("true")
+	} else {
+		cacheKeyBuilder.WriteString("false")
+	}
+	cacheKey := cacheKeyBuilder.String()
 
 	cacheMutex.Lock()
 	if cached, found := regexOrStringCache[cacheKey]; found {
@@ -280,8 +291,11 @@ func (g *Glob) expandInternal(path string, dirOnly bool) ([]string, error) {
 		for _, groupPattern := range groups {
 			expanded, err := g.expandInternal(groupPattern, dirOnly)
 			if err != nil {
-				// Log or decide how to handle partial errors
-				fmt.Printf("Warning: error expanding group pattern '%s': %v\n", groupPattern, err)
+				slog.Warn(
+					"Error expanding group pattern",
+					"pattern", groupPattern,
+					"error", err,
+				)
 				continue
 			}
 			for _, p := range expanded {
@@ -318,7 +332,11 @@ func (g *Glob) expandInternal(path string, dirOnly bool) ([]string, error) {
 			// Now get all subdirectories recursively
 			subItems, err := getRecursiveDirectoriesAndFiles(pDir, dirOnly)
 			if err != nil {
-				fmt.Printf("Warning: error during '**' recursion for '%s': %v\n", pDir, err)
+				slog.Warn(
+					"Error during '**' recursion",
+					"path", pDir,
+					"error", err,
+				)
 				continue
 			}
 			for _, itemPath := range subItems {
@@ -348,7 +366,11 @@ func (g *Glob) expandInternal(path string, dirOnly bool) ([]string, error) {
 	for _, segment := range ungroupedChildSegments {
 		ros, err := g.createRegexOrString(segment)
 		if err != nil {
-			fmt.Printf("Warning: malformed glob segment '%s' in child, skipping: %v\n", segment, err)
+			slog.Warn(
+				"Malformed glob segment in child, skipping",
+				"segment", segment,
+				"error", err,
+			)
 			continue
 		}
 		childRegexes = append(childRegexes, ros)
@@ -360,7 +382,11 @@ func (g *Glob) expandInternal(path string, dirOnly bool) ([]string, error) {
 	for _, parentDir := range expandedParentDirs {
 		absParentDir, err := filepath.Abs(parentDir)
 		if err != nil { // Should not happen if expandInternal returns abs paths
-			fmt.Printf("Warning: could not get absolute path for parentDir '%s', skipping\n", parentDir)
+			slog.Warn(
+				"Could not get absolute path for parentDir, skipping",
+				"parentDir", parentDir,
+				"error", err,
+			)
 			continue
 		}
 
@@ -370,8 +396,11 @@ func (g *Glob) expandInternal(path string, dirOnly bool) ([]string, error) {
 			if os.IsNotExist(readDirErr) { // Parent dir from a previous glob part might not exist
 				continue
 			}
-			// Log or decide how to handle permission errors, etc.
-			fmt.Printf("Warning: error reading directory '%s': %v\n", absParentDir, readDirErr)
+			slog.Warn(
+				"Error reading directory",
+				"directory", absParentDir,
+				"error", readDirErr,
+			)
 			continue
 		}
 
@@ -561,8 +590,11 @@ func getRecursiveDirectoriesAndFiles(root string, dirOnly bool) ([]string, error
 
 	err = filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// Log or handle errors like permission denied
-			fmt.Printf("Warning: error accessing '%s' during recursive search: %v\n", path, err)
+			slog.Warn(
+				"Error accessing path during recursive search",
+				"path", path,
+				"error", err,
+			)
 			if os.IsPermission(err) { // Skip permission denied errors to continue walk
 				if d != nil && d.IsDir() {
 					return fs.SkipDir
