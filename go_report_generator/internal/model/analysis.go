@@ -95,14 +95,14 @@ func (ce CodeElement) GetSortableName() string { return ce.FullName }
 type Method struct {
 	Name          string
 	Signature     string
-	DisplayName   string  // Stores the cleaned full name (after ExtractMethodName)
-	LineRate      float64 // Stored as 0-1.0
-	BranchRate    float64 // Stored as 0-1.0
+	DisplayName   string
+	LineRate      float64
+	BranchRate    *float64
 	Complexity    float64
 	Lines         []Line
-	FirstLine     int            // The line number where the method definition starts
-	LastLine      int            // The line number where the method definition ends
-	MethodMetrics []MethodMetric // Specific metrics for this method
+	FirstLine     int
+	LastLine      int
+	MethodMetrics []MethodMetric
 }
 
 // GetFirstLine implements utils.SortableByLineAndName for Method

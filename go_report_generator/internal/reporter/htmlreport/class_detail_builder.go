@@ -350,14 +350,27 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 		CoverageQuota:  coverageQuota,
 		MetricValues:   make([]string, len(headers)),
 	}
+
+	// Create a map for easy lookup of existing metrics for the method
 	methodMetricsMap := make(map[string]model.Metric)
 	for _, mm := range method.MethodMetrics {
 		for _, m := range mm.Metrics {
 			methodMetricsMap[m.Name] = m
 		}
 	}
+
+	// Manually add Line Coverage and Branch Coverage from the method model
+	// to ensure they are available for formatting.
+	methodMetricsMap["Line coverage"] = model.Metric{Value: method.LineRate * 100.0}
+	if method.BranchRate != nil {
+		methodMetricsMap["Branch coverage"] = model.Metric{Value: *method.BranchRate * 100.0}
+	}
+	// Note: Complexity and CrapScore are already in method.MethodMetrics, so they'll be in the map.
+
 	for i, headerVM := range headers {
 		var originalMetricKey string
+
+		// This switch maps the display name of the header back to the metric's key.
 		switch headerVM.Name {
 		case b.translations["Branch coverage"]:
 			originalMetricKey = "Branch coverage"
@@ -369,30 +382,19 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 			originalMetricKey = "Line coverage"
 		default:
 			originalMetricKey = headerVM.Name
-			if _, ok := methodMetricsMap[originalMetricKey]; !ok {
-				for key, translatedVal := range b.translations {
-					if translatedVal == headerVM.Name && (key == "Branch coverage" || key == "CrapScore" || key == "Cyclomatic complexity" || key == "Line coverage" || key == "Complexity") {
-						originalMetricKey = key
-						break
-					}
-				}
-			}
 		}
 
 		if metric, ok := methodMetricsMap[originalMetricKey]; ok {
 			row.MetricValues[i] = b.formatMetricValue(metric)
-		} else if originalMetricKey == "Cyclomatic complexity" {
-			if cxMetric, cxOk := methodMetricsMap["Complexity"]; cxOk {
-				row.MetricValues[i] = b.formatMetricValue(cxMetric)
-			} else {
-				row.MetricValues[i] = "-"
-			}
 		} else {
-			row.MetricValues[i] = "-"
+			// If the metric is not in the map (e.g., Branch coverage for a method where BranchRate was nil),
+			// explicitly set it to "N/A".
+			row.MetricValues[i] = "N/A"
 		}
 	}
 	return row
 }
+
 
 // buildMetricsTableForClassVM constructs the view model for the metrics table.
 // It collects all methods from all files within the class and sorts them

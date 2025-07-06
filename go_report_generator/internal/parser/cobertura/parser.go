@@ -4,28 +4,50 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 // CoberturaParser implements the parser.IParser interface for Cobertura XML reports.
+// It now includes a FileReader dependency to enable testability.
 type CoberturaParser struct {
+	fileReader FileReader // Injected dependency
 }
 
-// NewCoberturaParser creates a new CoberturaParser.
-func NewCoberturaParser() parser.IParser {
-	return &CoberturaParser{}
+// DefaultFileReader is the production implementation of the FileReader interface,
+// using the real filesystem.
+type DefaultFileReader struct{}
+
+// ReadFile implements the FileReader interface for production.
+func (dfr *DefaultFileReader) ReadFile(path string) ([]string, error) {
+	return filereader.ReadLinesInFile(path)
 }
 
+// CountLines implements the FileReader interface for production.
+func (dfr *DefaultFileReader) CountLines(path string) (int, error) {
+	return filereader.CountLinesInFile(path)
+}
+
+// NewCoberturaParser creates a new CoberturaParser with the given FileReader.
+// This constructor is designed for dependency injection.
+func NewCoberturaParser(fileReader FileReader) parser.IParser {
+	return &CoberturaParser{
+		fileReader: fileReader,
+	}
+}
+
+// init registers the CoberturaParser with the central parser factory.
+// It uses the DefaultFileReader for production use.
 func init() {
-	parser.RegisterParser(NewCoberturaParser())
+	parser.RegisterParser(NewCoberturaParser(&DefaultFileReader{}))
 }
 
 // Name returns the name of the parser.
@@ -60,31 +82,28 @@ func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 }
 
 // Parse processes the Cobertura XML file and transforms it into a common ParserResult.
-// It now accepts the lean parser.ParserConfig interface.
 func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
-	// Load and unmarshal the raw XML data.
 	rawReport, sourceDirsFromXML, err := cp.loadAndUnmarshalCoberturaXML(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load/unmarshal Cobertura XML from %s: %w", filePath, err)
 	}
 
-	// Determine the effective source directories by combining those from the
-	// command line and those specified within the report file itself.
 	effectiveSourceDirs := cp.getEffectiveSourceDirs(config, sourceDirsFromXML)
 
-	// Process the raw report data into the common model structure.
-	assemblies, err := cp.processPackages(rawReport.Packages.Package, effectiveSourceDirs, config)
+	// Create the orchestrator, passing true for supportsBranchCoverage
+	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs, true) 
+
+	assemblies, err := orchestrator.processPackages(rawReport.Packages.Package)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process Cobertura packages: %w", err)
 	}
 
-	// Extract the report's timestamp.
 	timestamp := cp.getReportTimestamp(rawReport.Timestamp)
 
 	return &parser.ParserResult{
 		Assemblies:             assemblies,
 		SourceDirectories:      sourceDirsFromXML,
-		SupportsBranchCoverage: true,
+		SupportsBranchCoverage: true, // This parser always supports it
 		ParserName:             cp.Name(),
 		MinimumTimeStamp:       timestamp,
 		MaximumTimeStamp:       timestamp,
@@ -96,21 +115,18 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 func (cp *CoberturaParser) getEffectiveSourceDirs(config parser.ParserConfig, sourceDirsFromXML []string) []string {
 	sourceDirsSet := make(map[string]struct{})
 
-	// Add directories from command-line arguments
 	for _, dir := range config.SourceDirectories() {
 		if dir != "" {
 			sourceDirsSet[dir] = struct{}{}
 		}
 	}
 
-	// Add directories from the XML report file
 	for _, dir := range sourceDirsFromXML {
 		if dir != "" {
 			sourceDirsSet[dir] = struct{}{}
 		}
 	}
 
-	// Convert the set back to a slice
 	var effectiveSourceDirs []string
 	for dir := range sourceDirsSet {
 		effectiveSourceDirs = append(effectiveSourceDirs, dir)
@@ -119,41 +135,18 @@ func (cp *CoberturaParser) getEffectiveSourceDirs(config parser.ParserConfig, so
 	return effectiveSourceDirs
 }
 
-// processPackages iterates through all <package> elements from the Cobertura report
-// and processes them into a slice of model.Assembly.
-func (cp *CoberturaParser) processPackages(packages []inputxml.PackageXML, sourceDirs []string, config parser.ParserConfig) ([]model.Assembly, error) {
-	var parsedAssemblies []model.Assembly
-	uniqueFilePathsForGrandTotalLines := make(map[string]int)
-
-	for _, pkgXML := range packages {
-		assembly, err := cp.processCoberturaPackageXML(pkgXML, sourceDirs, uniqueFilePathsForGrandTotalLines, config)
-		if err != nil {
-			// In a real application, a logger passed via the config/context would be used.
-			// For now, we print a warning and continue, allowing partial results.
-			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: could not process package XML for '%s': %v. Skipping.\n", pkgXML.Name, err)
-			continue
-		}
-		if assembly != nil { // A nil assembly means it was filtered out
-			parsedAssemblies = append(parsedAssemblies, *assembly)
-		}
-	}
-
-	return parsedAssemblies, nil
-}
-
 // getReportTimestamp parses the Cobertura timestamp string into a *time.Time object.
 func (cp *CoberturaParser) getReportTimestamp(rawTimestamp string) *time.Time {
 	if rawTimestamp == "" {
 		return nil
 	}
-	// Cobertura timestamps are typically Unix timestamps (seconds since epoch),
-	// but some generators produce milliseconds. We check for this.
 	parsedTs, err := strconv.ParseInt(rawTimestamp, 10, 64)
 	if err != nil {
+		slog.Warn("Failed to parse Cobertura timestamp", "timestamp", rawTimestamp, "error", err)
 		return nil
 	}
 
-	// If the timestamp seems to be in milliseconds, convert to seconds.
+	// Handle timestamps in milliseconds vs. seconds
 	if !utils.IsValidUnixSeconds(parsedTs) && utils.IsValidUnixSeconds(parsedTs/1000) {
 		parsedTs /= 1000
 	}
@@ -163,41 +156,41 @@ func (cp *CoberturaParser) getReportTimestamp(rawTimestamp string) *time.Time {
 		return &t
 	}
 
+	slog.Warn("Cobertura timestamp is outside the valid range", "timestamp", rawTimestamp)
 	return nil
 }
 
 func (cp *CoberturaParser) loadAndUnmarshalCoberturaXML(path string) (*inputxml.CoberturaRoot, []string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("open file: %w", err)
 	}
 	defer f.Close()
+
 	bytes, err := io.ReadAll(f)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("read file: %w", err)
 	}
+
 	var rawReport inputxml.CoberturaRoot
 	if err := xml.Unmarshal(bytes, &rawReport); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("unmarshal xml: %w", err)
 	}
 	return &rawReport, rawReport.Sources.Source, nil
 }
 
 func (cp *CoberturaParser) parseInt(s string) int {
-	val, _ := strconv.Atoi(s)
+	val, err := strconv.Atoi(s)
+	if err != nil {
+		return 0 // Fallback for simplicity in this specific helper
+	}
 	return val
 }
+
 func (cp *CoberturaParser) parseFloat(s string) float64 {
-	v, _ := strconv.ParseFloat(s, 64)
-	return v
-}
-func (cp *CoberturaParser) processCoberturaTimestamp(rawTimestamp string) int64 {
-	if rawTimestamp == "" {
-		return 0
-	}
-	parsedTs, err := strconv.ParseInt(rawTimestamp, 10, 64)
+	val, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return 0
+		return 0.0
 	}
-	return parsedTs
+	return val
 }
