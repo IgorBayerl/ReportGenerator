@@ -2,13 +2,20 @@ package reportconfig
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
-// IReportConfiguration defines the configuration for report generation.
+// ADD THIS MAP HERE. It's unexported as it's an internal detail of this package.
+var supportedReportTypes = map[string]bool{
+	"TextSummary": true,
+	"Html":        true,
+}
+
+// IReportConfiguration interface remains the same.
 type IReportConfiguration interface {
 	ReportFiles() []string
 	TargetDirectory() string
@@ -30,7 +37,7 @@ type IReportConfiguration interface {
 	Settings() *settings.Settings
 }
 
-// ReportConfiguration is a concrete implementation of IReportConfiguration.
+// ReportConfiguration struct remains the same.
 type ReportConfiguration struct {
 	RFiles                        []string
 	TDirectory                    string
@@ -52,7 +59,7 @@ type ReportConfiguration struct {
 	App                           *settings.Settings
 }
 
-// Implement IReportConfiguration methods
+// All accessor methods remain the same.
 func (rc *ReportConfiguration) ReportFiles() []string              { return rc.RFiles }
 func (rc *ReportConfiguration) TargetDirectory() string            { return rc.TDirectory }
 func (rc *ReportConfiguration) SourceDirectories() []string        { return rc.SDirectories }
@@ -76,70 +83,165 @@ func (rc *ReportConfiguration) InvalidReportFilePatterns() []string    { return 
 func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return rc.VLevelValid }
 func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App }
 
-// NewReportConfiguration is a constructor for ReportConfiguration.
+// --- Functional Options Pattern Implementation ---
+
+// Option is a function that configures a ReportConfiguration.
+type Option func(*ReportConfiguration) error
+
+// NewReportConfiguration is the new, cleaner constructor.
 func NewReportConfiguration(
 	reportFiles []string,
 	targetDir string,
-	sourceDirs []string,
-	historyDir string,
-	reportTypes []string,
-	tag string,
-	title string,
-	verbosity logging.VerbosityLevel,
-	invalidPatterns []string,
-	// Raw filter strings for creating IFilter instances
-	assemblyFilterStrings []string,
-	classFilterStrings []string,
-	fileFilterStrings []string,
-	riskHotspotAssemblyFilterStrings []string,
-	riskHotspotClassFilterStrings []string,
-	appSettings *settings.Settings,
-) (*ReportConfiguration, error) { // Return error for filter creation issues
-	if len(reportTypes) == 0 {
-		reportTypes = []string{"Html"} // Default
-	}
+	opts ...Option,
+) (*ReportConfiguration, error) {
+	defaultAssemblyFilter, _ := filtering.NewDefaultFilter(nil)
+	defaultClassFilter, _ := filtering.NewDefaultFilter(nil)
+	defaultFileFilter, _ := filtering.NewDefaultFilter(nil, true)
 
-	var err error
-	var assemblyFilter, classFilter, fileFilter, rhAssemblyFilter, rhClassFilter filtering.IFilter
-
-	assemblyFilter, err = filtering.NewDefaultFilter(assemblyFilterStrings)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create assembly filter: %w", err)
-	}
-	classFilter, err = filtering.NewDefaultFilter(classFilterStrings)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create class filter: %w", err)
-	}
-	fileFilter, err = filtering.NewDefaultFilter(fileFilterStrings, true) // true for osIndependantPathSeparator
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file filter: %w", err)
-	}
-	rhAssemblyFilter, err = filtering.NewDefaultFilter(riskHotspotAssemblyFilterStrings)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create risk hotspot assembly filter: %w", err)
-	}
-	rhClassFilter, err = filtering.NewDefaultFilter(riskHotspotClassFilterStrings)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create risk hotspot class filter: %w", err)
-	}
-
-	return &ReportConfiguration{
+	cfg := &ReportConfiguration{
 		RFiles:                        reportFiles,
 		TDirectory:                    targetDir,
-		SDirectories:                  sourceDirs,
-		HDirectory:                    historyDir,
-		RTypes:                        reportTypes,
-		CfgTag:                        tag,
-		CfgTitle:                      title,
-		VLevel:                        verbosity,
+		RTypes:                        []string{"Html"},
+		VLevel:                        logging.Info,
 		VLevelValid:                   true,
-		InvalidPatterns:               invalidPatterns,
-		AssemblyFilterInstance:        assemblyFilter,
-		ClassFilterInstance:           classFilter,
-		FileFilterInstance:            fileFilter,
-		RiskHotspotAssemblyFilterInst: rhAssemblyFilter,
-		RiskHotspotClassFilterInst:    rhClassFilter,
-		PluginsList:                   []string{},  // Initialize if not passed
-		App:                           appSettings, // Store settings
-	}, nil
+		CfgTitle:                      "Coverage Report",
+		App:                           settings.NewSettings(),
+		AssemblyFilterInstance:        defaultAssemblyFilter,
+		ClassFilterInstance:           defaultClassFilter,
+		FileFilterInstance:            defaultFileFilter,
+		RiskHotspotAssemblyFilterInst: defaultAssemblyFilter,
+		RiskHotspotClassFilterInst:    defaultClassFilter,
+		PluginsList:                   []string{},
+		InvalidPatterns:               []string{},
+	}
+
+	for _, opt := range opts {
+		if err := opt(cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	return cfg, nil
+}
+
+// --- Define the Option functions ---
+
+func WithSourceDirectories(dirs []string) Option {
+	return func(c *ReportConfiguration) error {
+		c.SDirectories = dirs
+		return nil
+	}
+}
+
+func WithHistoryDirectory(dir string) Option {
+	return func(c *ReportConfiguration) error {
+		c.HDirectory = dir
+		return nil
+	}
+}
+
+// WithReportTypes now includes validation.
+func WithReportTypes(types []string) Option {
+	return func(c *ReportConfiguration) error {
+		if len(types) == 0 {
+			// Do nothing, keep the default
+			return nil
+		}
+
+		// Validate the types
+		var validatedTypes []string
+		for _, t := range types {
+			trimmedType := strings.TrimSpace(t)
+			if trimmedType == "" {
+				continue
+			}
+			if !supportedReportTypes[trimmedType] {
+				return fmt.Errorf("unsupported report type: %s", trimmedType)
+			}
+			validatedTypes = append(validatedTypes, trimmedType)
+		}
+
+		if len(validatedTypes) > 0 {
+			c.RTypes = validatedTypes
+		}
+
+		return nil
+	}
+}
+
+func WithTag(tag string) Option {
+	return func(c *ReportConfiguration) error {
+		c.CfgTag = tag
+		return nil
+	}
+}
+
+func WithTitle(title string) Option {
+	return func(c *ReportConfiguration) error {
+		if title != "" {
+			c.CfgTitle = title
+		}
+		return nil
+	}
+}
+
+func WithVerbosity(verbosity logging.VerbosityLevel) Option {
+	return func(c *ReportConfiguration) error {
+		c.VLevel = verbosity
+		return nil
+	}
+}
+
+func WithInvalidPatterns(patterns []string) Option {
+	return func(c *ReportConfiguration) error {
+		c.InvalidPatterns = patterns
+		return nil
+	}
+}
+
+func WithSettings(s *settings.Settings) Option {
+	return func(c *ReportConfiguration) error {
+		if s != nil {
+			c.App = s
+		}
+		return nil
+	}
+}
+
+func WithFilters(
+	assemblyFilters []string,
+	classFilters []string,
+	fileFilters []string,
+	rhAssemblyFilters []string,
+	rhClassFilters []string,
+) Option {
+	return func(c *ReportConfiguration) error {
+		var err error
+		c.AssemblyFilterInstance, err = filtering.NewDefaultFilter(assemblyFilters)
+		if err != nil {
+			return fmt.Errorf("failed to create assembly filter: %w", err)
+		}
+
+		c.ClassFilterInstance, err = filtering.NewDefaultFilter(classFilters)
+		if err != nil {
+			return fmt.Errorf("failed to create class filter: %w", err)
+		}
+
+		c.FileFilterInstance, err = filtering.NewDefaultFilter(fileFilters, true)
+		if err != nil {
+			return fmt.Errorf("failed to create file filter: %w", err)
+		}
+
+		c.RiskHotspotAssemblyFilterInst, err = filtering.NewDefaultFilter(rhAssemblyFilters)
+		if err != nil {
+			return fmt.Errorf("failed to create risk hotspot assembly filter: %w", err)
+		}
+
+		c.RiskHotspotClassFilterInst, err = filtering.NewDefaultFilter(rhClassFilters)
+		if err != nil {
+			return fmt.Errorf("failed to create risk hotspot class filter: %w", err)
+		}
+
+		return nil
+	}
 }
