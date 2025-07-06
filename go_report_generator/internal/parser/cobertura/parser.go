@@ -178,19 +178,3 @@ func (cp *CoberturaParser) loadAndUnmarshalCoberturaXML(path string) (*inputxml.
 	}
 	return &rawReport, rawReport.Sources.Source, nil
 }
-
-func (cp *CoberturaParser) parseInt(s string) int {
-	val, err := strconv.Atoi(s)
-	if err != nil {
-		return 0 // Fallback for simplicity in this specific helper
-	}
-	return val
-}
-
-func (cp *CoberturaParser) parseFloat(s string) float64 {
-	val, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0.0
-	}
-	return val
-}
