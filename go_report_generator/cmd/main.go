@@ -25,14 +25,14 @@ import (
 )
 
 type cliFlags struct {
-	reportsPatterns *string
-	outputDir       *string
-	reportTypes     *string
-	sourceDirs      *string
-	tag             *string
-	title           *string
-	verbosity       *string
-	logFile         *string
+	reportsPatterns   *string
+	outputDir         *string
+	reportTypes       *string
+	sourceDirs        *string
+	tag               *string
+	title             *string
+	verbosity         *string
+	logFile           *string
 	assemblyFilters   *string
 	classFilters      *string
 	fileFilters       *string
