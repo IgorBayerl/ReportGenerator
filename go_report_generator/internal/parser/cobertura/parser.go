@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv" // Make sure this is imported
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting" // Changed from reportconfig
 )
 
 // CoberturaParser implements the parser.IParser interface for Cobertura XML reports.
@@ -60,15 +59,12 @@ func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 }
 
 // Parse processes the Cobertura XML file and transforms it into a common ParserResult.
-// Now accepts IReportContext instead of IReportConfiguration.
-func (cp *CoberturaParser) Parse(filePath string, context reporting.IReportContext) (*parser.ParserResult, error) {
+// It now accepts the lean parser.ParserConfig interface.
+func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
 	rawReport, sourceDirsFromXML, err := cp.loadAndUnmarshalCoberturaXML(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load/unmarshal Cobertura XML from %s: %w", filePath, err)
 	}
-
-	config := context.ReportConfiguration() // Get IReportConfiguration from context
-	// settings := context.Settings() // Get Settings from context
 
 	effectiveSourceDirs := config.SourceDirectories()
 	if len(effectiveSourceDirs) == 0 && len(sourceDirsFromXML) > 0 {
@@ -79,8 +75,11 @@ func (cp *CoberturaParser) Parse(filePath string, context reporting.IReportConte
 	uniqueFilePathsForGrandTotalLines := make(map[string]int)
 
 	for _, pkgXML := range rawReport.Packages.Package {
-		assembly, err := cp.processCoberturaPackageXML(pkgXML, effectiveSourceDirs, uniqueFilePathsForGrandTotalLines, context) // Pass full context
+		// Pass the lean 'config' directly to processing functions.
+		assembly, err := cp.processCoberturaPackageXML(pkgXML, effectiveSourceDirs, uniqueFilePathsForGrandTotalLines, config)
 		if err != nil {
+			// In a real app with logging, this would use the logger.
+			// For now, printing to stderr is a placeholder.
 			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: could not process package XML for '%s': %v. Skipping.\n", pkgXML.Name, err)
 			continue
 		}

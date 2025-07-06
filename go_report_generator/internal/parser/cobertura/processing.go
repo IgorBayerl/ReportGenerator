@@ -3,6 +3,7 @@ package cobertura
 import (
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,7 +11,7 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
@@ -59,12 +60,10 @@ func (cp *CoberturaParser) processCoberturaPackageXML(
 	pkgXML inputxml.PackageXML,
 	sourceDirs []string,
 	uniqueFilePathsForGrandTotalLines map[string]int,
-	context reporting.IReportContext,
+	config parser.ParserConfig,
 ) (*model.Assembly, error) {
-	config := context.ReportConfiguration()
-	settings := context.Settings()
+	settings := config.Settings()
 
-	// Corrected filter usage
 	if !config.AssemblyFilters().IsElementIncludedInReport(pkgXML.Name) {
 		return nil, nil
 	}
@@ -85,15 +84,10 @@ func (cp *CoberturaParser) processCoberturaPackageXML(
 		if cp.isFilteredRawClassNameCobertura(logicalName, settings.RawMode) {
 			continue
 		}
-		classModel, err := cp.processCoberturaClassGroup(classXMLGroup, assembly.Name, sourceDirs, uniqueFilePathsForGrandTotalLines, assemblyProcessedFilePaths, context)
+		// Pass 'config' down the call chain
+		classModel, err := cp.processCoberturaClassGroup(classXMLGroup, assembly.Name, sourceDirs, uniqueFilePathsForGrandTotalLines, assemblyProcessedFilePaths, config)
 		if err != nil {
-			logger := context.Logger()
-			logger.Warn(
-				"CoberturaParser: error processing class group",
-				"classGroup", logicalName,
-				"assembly", assembly.Name,
-				"error", err,
-			)
+			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: error processing class group '%s' in assembly '%s': %v\n", logicalName, assembly.Name, err)
 			continue
 		}
 		if classModel != nil {
@@ -101,6 +95,7 @@ func (cp *CoberturaParser) processCoberturaPackageXML(
 		}
 	}
 
+	// Aggregation logic remains unchanged...
 	var allClassLinesCovered, allClassLinesValid []int
 	var allClassBranchesCovered, allClassBranchesValid []int
 	hasAsmBranchData := false
@@ -138,13 +133,12 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 	sourceDirs []string,
 	uniqueFilePathsForGrandTotalLines map[string]int,
 	assemblyProcessedFilePaths map[string]struct{},
-	context reporting.IReportContext,
+	config parser.ParserConfig,
 ) (*model.Class, error) {
 	if len(classXMLs) == 0 {
 		return nil, nil
 	}
-	config := context.ReportConfiguration()
-	settings := context.Settings()
+	settings := config.Settings()
 
 	logicalName := cp.logicalClassNameCobertura(classXMLs[0].Name, settings.RawMode)
 	if !config.ClassFilters().IsElementIncludedInReport(logicalName) {
@@ -205,26 +199,20 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 				currentCodeFile.TotalLines = lineCount
 			}
 		} else {
-			logger := context.Logger() // Get logger from context
-			logger.Warn(
-				"Source file not found, line content will be missing",
-				"parser", "Cobertura",
-				"class", logicalName,
-				"file", filePath,
-			)
+			fmt.Fprintf(os.Stderr, "Warning: CoberturaParser: source file '%s' for class '%s' not found. Line content will be missing.\n", filePath, logicalName)
 		}
 
 		maxLineNumInFile := 0
 		for _, fragment := range fragmentsForFile {
 			for _, lineXML := range fragment.Lines.Line {
-				ln := cp.parseInt(lineXML.Number)
+				ln, _ := strconv.Atoi(lineXML.Number)
 				if ln > maxLineNumInFile {
 					maxLineNumInFile = ln
 				}
 			}
 			for _, methodXML := range fragment.Methods.Method {
 				for _, lineXML := range methodXML.Lines.Line {
-					ln := cp.parseInt(lineXML.Number)
+					ln, _ := strconv.Atoi(lineXML.Number)
 					if ln > maxLineNumInFile {
 						maxLineNumInFile = ln
 					}
@@ -273,7 +261,7 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 			}
 
 			for _, methodXML := range fragment.Methods.Method {
-				methodModel, mErr := cp.processCoberturaMethodXML(methodXML, sourceLinesForFile, fragment.Name, context)
+				methodModel, mErr := cp.processCoberturaMethodXML(methodXML, sourceLinesForFile, fragment.Name, config)
 				if mErr != nil {
 					continue
 				}
@@ -339,7 +327,7 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 				currentLine.LineVisitStatus = model.NotCoverable
 			} else if currentLine.IsBranchPoint {
 				if currentLine.TotalBranches == 0 {
-					currentLine.LineVisitStatus = model.NotCoverable // Or Covered if hits > 0 but no branches? C# logic is complex here. Defaulting to NotCoverable.
+					currentLine.LineVisitStatus = model.NotCoverable
 				} else if currentLine.CoveredBranches == currentLine.TotalBranches {
 					currentLine.LineVisitStatus = model.Covered
 				} else if currentLine.CoveredBranches > 0 {
@@ -367,7 +355,6 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 		currentCodeFile.CoveredLines = fileCoveredLines
 		currentCodeFile.CoverableLines = fileCoverableLines
 
-		// Deduplicate MethodMetrics and CodeElements at the file level
 		currentCodeFile.MethodMetrics = utils.DistinctBy(currentCodeFile.MethodMetrics, func(mm model.MethodMetric) string { return mm.Name + fmt.Sprintf("_%d", mm.Line) })
 		currentCodeFile.CodeElements = utils.DistinctBy(allCodeElementsForFileFragment, func(ce model.CodeElement) string { return ce.FullName + fmt.Sprintf("_%d", ce.FirstLine) })
 		utils.SortByLineAndName(currentCodeFile.CodeElements)
@@ -383,7 +370,7 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 			totalClassBranchesCovered += fileBranchesCovered
 			totalClassBranchesValid += fileBranchesValid
 		}
-	} // End loop over distinct file paths for the class
+	}
 
 	if hasClassBranchData {
 		classModel.BranchesCovered = &totalClassBranchesCovered
@@ -406,15 +393,15 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 			methodHasCoverableLines := false
 			methodIsFullyCovered := true
 			if len(method.Lines) == 0 {
-				methodIsFullyCovered = false // A method with no lines (e.g. abstract or interface) isn't "fully covered" by execution
+				methodIsFullyCovered = false
 			} else {
 				atLeastOneLineCoveredInMethod := false
 				for _, line := range method.Lines {
-					if line.Hits >= 0 { // Line is coverable
+					if line.Hits >= 0 {
 						methodHasCoverableLines = true
 						if line.Hits > 0 {
 							atLeastOneLineCoveredInMethod = true
-						} else { // Coverable line but 0 hits
+						} else {
 							methodIsFullyCovered = false
 						}
 					}
@@ -422,15 +409,14 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 				if atLeastOneLineCoveredInMethod {
 					coveredM++
 				}
-				if !methodHasCoverableLines && totalM > 0 { // If method had lines but none were coverable (e.g. all comments)
-					methodIsFullyCovered = false // Or true, depending on definition. C# treats methods with no coverable lines as fully covered if they have 0 lines.
-					// If method.Lines is empty, it's already false. If method.Lines has non-coverable lines, it's not fully covered by execution.
+				if !methodHasCoverableLines && totalM > 0 {
+					methodIsFullyCovered = false
 				}
 			}
-			if methodIsFullyCovered && methodHasCoverableLines { // Only count as fully covered if it actually had coverable lines and all were hit
+			if methodIsFullyCovered && methodHasCoverableLines {
 				fullyCoveredM++
-			} else if !methodHasCoverableLines && len(method.Lines) == 0 { // Method has no lines at all (e.g. abstract)
-				fullyCoveredM++ // Consider this fully covered by ReportGenerator standard
+			} else if !methodHasCoverableLines && len(method.Lines) == 0 {
+				fullyCoveredM++
 			}
 		}
 	}
@@ -462,106 +448,9 @@ func (cp *CoberturaParser) processCoberturaClassGroup(
 	return &classModel, nil
 }
 
-func (cp *CoberturaParser) processCoberturaCodeFileFragment(
-	classXML inputxml.ClassXML,
-	sourceDirs []string,
-	uniqueFilePathsForGrandTotalLines map[string]int,
-	context reporting.IReportContext,
-) (*model.CodeFile, fileProcessingMetricsCobertura, error) {
-	metrics := fileProcessingMetricsCobertura{}
-	codeFile := model.CodeFile{Path: classXML.Filename, MethodMetrics: []model.MethodMetric{}, CodeElements: []model.CodeElement{}}
-	var sourceLines []string
-
-	resolvedPath, err := utils.FindFileInSourceDirs(classXML.Filename, sourceDirs)
-	if err == nil {
-		codeFile.Path = resolvedPath
-		sLines, readErr := filereader.ReadLinesInFile(resolvedPath)
-		if readErr != nil {
-			sourceLines = []string{}
-		} else {
-			sourceLines = sLines
-		}
-
-		if lineCount, known := uniqueFilePathsForGrandTotalLines[resolvedPath]; known {
-			codeFile.TotalLines = lineCount
-		} else {
-			if n, ferr := filereader.CountLinesInFile(resolvedPath); ferr == nil {
-				uniqueFilePathsForGrandTotalLines[resolvedPath] = n
-				codeFile.TotalLines = n
-			} else {
-				if readErr == nil {
-					uniqueFilePathsForGrandTotalLines[resolvedPath] = len(sourceLines)
-					codeFile.TotalLines = len(sourceLines)
-				} else {
-					codeFile.TotalLines = 0
-				}
-			}
-		}
-	} else {
-		sourceLines = []string{}
-		codeFile.TotalLines = 0
-	}
-
-	var fileFragmentCoveredLines, fileFragmentCoverableLines int
-	for _, lineXML := range classXML.Lines.Line {
-		lineModel, lineMetricsStats := cp.processCoberturaLineXML(lineXML, sourceLines)
-		codeFile.Lines = append(codeFile.Lines, lineModel)
-
-		if lineModel.Hits >= 0 {
-			fileFragmentCoverableLines++
-			metrics.linesValid++
-			if lineModel.Hits > 0 {
-				fileFragmentCoveredLines++
-				metrics.linesCovered++
-			}
-		}
-		metrics.branchesCovered += lineMetricsStats.branchesCovered
-		metrics.branchesValid += lineMetricsStats.branchesValid
-	}
-	codeFile.CoveredLines = fileFragmentCoveredLines
-	codeFile.CoverableLines = fileFragmentCoverableLines
-
-	for _, methodXML := range classXML.Methods.Method {
-		methodModel, mErr := cp.processCoberturaMethodXML(methodXML, sourceLines, classXML.Name, context)
-		if mErr != nil {
-			continue
-		}
-		if methodModel.MethodMetrics != nil {
-			codeFile.MethodMetrics = append(codeFile.MethodMetrics, methodModel.MethodMetrics...)
-		}
-		elementType := model.MethodElementType
-		cleanedFullNameForElement := methodModel.DisplayName
-		if strings.HasPrefix(cleanedFullNameForElement, "get_") || strings.HasPrefix(cleanedFullNameForElement, "set_") {
-			elementType = model.PropertyElementType
-		}
-		var coverageQuotaForElement *float64
-		if len(methodModel.Lines) > 0 && !math.IsNaN(methodModel.LineRate) && !math.IsInf(methodModel.LineRate, 0) {
-			cq := methodModel.LineRate * 100.0
-			coverageQuotaForElement = &cq
-		}
-		var shortNameForElement string
-		if elementType == model.PropertyElementType {
-			shortNameForElement = cleanedFullNameForElement
-		} else {
-			shortNameForElement = utils.GetShortMethodName(cleanedFullNameForElement)
-		}
-		codeElement := model.CodeElement{
-			Name:          shortNameForElement,
-			FullName:      cleanedFullNameForElement,
-			Type:          elementType,
-			FirstLine:     methodModel.FirstLine,
-			LastLine:      methodModel.LastLine,
-			CoverageQuota: coverageQuotaForElement,
-		}
-		codeFile.CodeElements = append(codeFile.CodeElements, codeElement)
-	}
-	utils.SortByLineAndName(codeFile.CodeElements)
-	return &codeFile, metrics, nil
-}
-
 func (cp *CoberturaParser) processCoberturaLineXML(lineXML inputxml.LineXML, sourceLines []string) (model.Line, fileProcessingMetricsCobertura) {
 	metrics := fileProcessingMetricsCobertura{}
-	lineNumber := cp.parseInt(lineXML.Number)
+	lineNumber, _ := strconv.Atoi(lineXML.Number)
 
 	line := model.Line{
 		Number:            lineNumber,
@@ -577,12 +466,11 @@ func (cp *CoberturaParser) processCoberturaLineXML(lineXML inputxml.LineXML, sou
 		line.Content = ""
 	}
 
-	// --- FIX 2: Revised Branch Counting Logic ---
 	if line.IsBranchPoint {
 		conditionCoverageAttr := lineXML.ConditionCoverage
 		matches := conditionCoverageRegexCobertura.FindStringSubmatch(conditionCoverageAttr)
 
-		if len(matches) > 0 { // Regex for "(C/T)" format matched. This is the primary source for counts.
+		if len(matches) > 0 {
 			groupNames := conditionCoverageRegexCobertura.SubexpNames()
 			var coveredStr, totalStr string
 			for i, name := range groupNames {
@@ -603,32 +491,23 @@ func (cp *CoberturaParser) processCoberturaLineXML(lineXML inputxml.LineXML, sou
 					line.CoveredBranches = numberOfCoveredBranches
 					line.TotalBranches = numberOfTotalBranches
 
-					// Populate model.Branch details.
-					// The <conditions> sub-elements can provide identifiers/details for these branches.
 					for i := 0; i < line.TotalBranches; i++ {
 						visits := 0
-						if i < line.CoveredBranches { // Simplistic assignment for covered status
+						if i < line.CoveredBranches {
 							visits = 1
 						}
-						identifier := fmt.Sprintf("%d_%d", lineNumber, i) // Default identifier
+						identifier := fmt.Sprintf("%d_%d", lineNumber, i)
 						if i < len(lineXML.Conditions.Condition) {
-							conditionElement := lineXML.Conditions.Condition[i]
-							identifier = conditionElement.Number // Use specific identifier from <condition>
-							// Optionally, refine 'visits' based on conditionElement.Coverage
-							// e.g., if strings.HasPrefix(conditionElement.Coverage, "100") { visits = 1 } else { visits = 0}
-							// However, for the count, the (C/T) attribute is leading.
+							identifier = lineXML.Conditions.Condition[i].Number
 						}
 						line.Branch = append(line.Branch, model.BranchCoverageDetail{
 							Identifier: identifier, Visits: visits,
 						})
 					}
 				} else {
-					// Regex matched, but string to int conversion failed or TotalBranches was 0
 					cp.setFallbackBranchDataCobertura(&line)
 				}
 			} else {
-				// Regex did not match (attribute not in (X/Y) format, e.g., just "50%")
-				// Try to derive counts from <condition> sub-elements if they exist
 				if len(lineXML.Conditions.Condition) > 0 {
 					for _, conditionXMLElement := range lineXML.Conditions.Condition {
 						branchDetail := model.BranchCoverageDetail{Identifier: conditionXMLElement.Number, Visits: 0}
@@ -642,13 +521,10 @@ func (cp *CoberturaParser) processCoberturaLineXML(lineXML inputxml.LineXML, sou
 						line.TotalBranches++
 					}
 				} else {
-					// No (C/T) format and no <conditions> elements
 					cp.setFallbackBranchDataCobertura(&line)
 				}
 			}
 		} else if len(lineXML.Conditions.Condition) > 0 {
-			// Condition-coverage attribute was empty or completely unparseable by regex,
-			// but <condition> elements exist. Use them.
 			for _, conditionXMLElement := range lineXML.Conditions.Condition {
 				branchDetail := model.BranchCoverageDetail{Identifier: conditionXMLElement.Number, Visits: 0}
 				if strings.HasPrefix(conditionXMLElement.Coverage, "100") {
@@ -661,11 +537,9 @@ func (cp *CoberturaParser) processCoberturaLineXML(lineXML inputxml.LineXML, sou
 				line.TotalBranches++
 			}
 		} else {
-			// Is a branch point, but no usable info in condition-coverage attribute or <conditions>
 			cp.setFallbackBranchDataCobertura(&line)
 		}
 	}
-	// If !line.IsBranchPoint, it's a simple line, no branch data assigned (Covered/TotalBranches remain 0)
 
 	metrics.branchesCovered = line.CoveredBranches
 	metrics.branchesValid = line.TotalBranches
@@ -685,17 +559,18 @@ func (cp *CoberturaParser) setFallbackBranchDataCobertura(line *model.Line) {
 	})
 }
 
+// processCoberturaMethodXML now accepts parser.ParserConfig.
 func (cp *CoberturaParser) processCoberturaMethodXML(
 	methodXML inputxml.MethodXML,
 	sourceLines []string,
 	classNameFromXML string,
-	context reporting.IReportContext,
+	config parser.ParserConfig,
 ) (*model.Method, error) {
 	rawMethodName := methodXML.Name
 	rawSignature := methodXML.Signature
 	fullNameFromXML := rawMethodName + rawSignature
 
-	extractedFullNameForDisplay := cp.extractMethodNameCobertura(fullNameFromXML, classNameFromXML, context.Settings().RawMode)
+	extractedFullNameForDisplay := cp.extractMethodNameCobertura(fullNameFromXML, classNameFromXML, config.Settings().RawMode)
 
 	if strings.Contains(extractedFullNameForDisplay, "__") && lambdaMethodNameRegexCobertura.MatchString(extractedFullNameForDisplay) {
 		return nil, fmt.Errorf("method '%s' (extracted: '%s') is a lambda and skipped", fullNameFromXML, extractedFullNameForDisplay)
@@ -721,7 +596,7 @@ func (cp *CoberturaParser) processMethodLinesCobertura(methodXML inputxml.Method
 	var methodBranchesCovered, methodBranchesValid int
 
 	for _, lineXML := range methodXML.Lines.Line {
-		currentLineNum := cp.parseInt(lineXML.Number)
+		currentLineNum, _ := strconv.Atoi(lineXML.Number)
 		if currentLineNum < minLine {
 			minLine = currentLineNum
 		}
