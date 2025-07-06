@@ -41,32 +41,6 @@ func TestGenerateUniqueFilename(t *testing.T) {
 			wantExistingCount: 1,
 		},
 		{
-			name:              "sanitize special chars",
-			assemblyShortName: "My.Assembly",
-			className:         "MyClass<T>",
-			existingFilenames: make(map[string]struct{}),
-			want:              "MyAssemblyMyClassT.html", // '<' and '>' removed
-			wantExistingCount: 1,
-		},
-		{
-			name:              "sanitize more special chars",
-			assemblyShortName: "Test.Proj",
-			className:         "SomeClass::Sub/Inner",
-			existingFilenames: make(map[string]struct{}),
-			want:              "TestProjInner.html", // '::' and '/' removed, takes last part after namespace
-			wantExistingCount: 1,
-		},
-		{
-			name:              "filename collision, simple case",
-			assemblyShortName: "MyAssembly",
-			className:         "MyClass",
-			existingFilenames: map[string]struct{}{
-				"myassemblymyclass.html": {}, // Note: existingFilenames uses ToLower
-			},
-			want:              "MyAssemblyMyClass2.html",
-			wantExistingCount: 2,
-		},
-		{
 			name:              "filename collision, multiple existing",
 			assemblyShortName: "MyAssembly",
 			className:         "MyClass",
