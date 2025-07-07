@@ -440,12 +440,13 @@ func (g *Glob) processPathSegment(parentPattern, childPattern string, dirOnly bo
 
 		// Handle '.' and '..' matching
 		for _, ros := range childRegexes {
-			if ros.OriginalRegexPattern == `^\.$` { // Matches "."
+			switch ros.OriginalRegexPattern {
+			case `^\.$`: // Matches "."
 				if !seenPaths[parentDir] {
 					allMatches = append(allMatches, parentDir)
 					seenPaths[parentDir] = true
 				}
-			} else if ros.OriginalRegexPattern == `^\.\.$` { // Matches ".."
+			case `^\.\.$`: // Matches ".."
 				grandParentDir := g.parentDir(parentDir)
 				if grandParentDir != parentDir { // Avoids root's parent being itself
 					if !seenPaths[grandParentDir] {
