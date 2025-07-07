@@ -531,12 +531,13 @@ func ungroup(path string) ([]string, error) {
 	firstOpenBrace := -1
 
 	for i, char := range path {
-		if char == '{' {
+		switch char {
+		case '{':
 			if level == 0 {
 				firstOpenBrace = i
 			}
 			level++
-		} else if char == '}' {
+		case '}':
 			level--
 			if level == 0 && firstOpenBrace != -1 { // Found a top-level group
 				prefix := path[:firstOpenBrace]
