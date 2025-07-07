@@ -2,6 +2,7 @@ package glob
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"path/filepath"
 	"reflect"
@@ -169,11 +170,18 @@ func (m *MockFilesystem) SetCwd(cwd string) {
 	m.cwd = m.normalizePath(cwd)
 }
 
+// unused methods in this package
+func (m *MockFilesystem) MkdirAll(path string, perm fs.FileMode) error { return nil }
+func (m *MockFilesystem) Create(path string) (io.WriteCloser, error) { return nil, nil }
+func (m *MockFilesystem) Open(path string) (fs.File, error) { return nil, nil }
+func (m *MockFilesystem) ReadFile(path string) ([]byte, error) { return nil, nil }
+func (m *MockFilesystem) WriteFile(path string, data []byte, perm fs.FileMode) error { return nil }
+
 // Test helper functions
 func setupLinuxFS() *MockFilesystem {
 	fs := NewMockFilesystem("unix")
 	fs.SetCwd("/home/user")
-	
+
 	// Create directory structure
 	fs.AddFile("/", true)
 	fs.AddFile("/home", true)
@@ -192,14 +200,14 @@ func setupLinuxFS() *MockFilesystem {
 	fs.AddFile("/tmp", true)
 	fs.AddFile("/tmp/temp1.tmp", false)
 	fs.AddFile("/tmp/temp2.tmp", false)
-	
+
 	return fs
 }
 
 func setupWindowsFS() *MockFilesystem {
 	fs := NewMockFilesystem("windows")
 	fs.SetCwd("C:\\Users\\User")
-	
+
 	// Create directory structure
 	fs.AddFile("C:\\", true)
 	fs.AddFile("C:\\Users", true)
@@ -218,7 +226,7 @@ func setupWindowsFS() *MockFilesystem {
 	fs.AddFile("C:\\Temp", true)
 	fs.AddFile("C:\\Temp\\temp1.tmp", false)
 	fs.AddFile("C:\\Temp\\temp2.tmp", false)
-	
+
 	return fs
 }
 
@@ -233,8 +241,8 @@ func normalizePathsForComparison(paths []string) []string {
 
 func TestGlobBasicPatterns(t *testing.T) {
 	testCases := []struct {
-		name        string
-		pattern     string
+		name         string
+		pattern      string
 		expectedUnix []string
 		expectedWin  []string
 	}{
@@ -312,10 +320,10 @@ func TestGlobBasicPatterns(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedUnix)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -329,10 +337,10 @@ func TestGlobBasicPatterns(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedWin)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -343,8 +351,8 @@ func TestGlobBasicPatterns(t *testing.T) {
 
 func TestGlobAbsolutePaths(t *testing.T) {
 	testCases := []struct {
-		name        string
-		pattern     string
+		name         string
+		pattern      string
 		expectedUnix []string
 		expectedWin  []string
 	}{
@@ -358,8 +366,8 @@ func TestGlobAbsolutePaths(t *testing.T) {
 			expectedWin: []string{}, // Should work differently on Windows
 		},
 		{
-			name:    "absolute path windows",
-			pattern: "C:\\Users\\User\\Documents\\*.txt",
+			name:         "absolute path windows",
+			pattern:      "C:\\Users\\User\\Documents\\*.txt",
 			expectedUnix: []string{}, // Should work differently on Unix
 			expectedWin: []string{
 				"C:/Users/User/Documents/file1.txt",
@@ -378,10 +386,10 @@ func TestGlobAbsolutePaths(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedUnix)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -395,10 +403,10 @@ func TestGlobAbsolutePaths(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedWin)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -409,8 +417,8 @@ func TestGlobAbsolutePaths(t *testing.T) {
 
 func TestGlobRecursivePatterns(t *testing.T) {
 	testCases := []struct {
-		name        string
-		pattern     string
+		name         string
+		pattern      string
 		expectedUnix []string
 		expectedWin  []string
 	}{
@@ -464,10 +472,10 @@ func TestGlobRecursivePatterns(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedUnix)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -481,10 +489,10 @@ func TestGlobRecursivePatterns(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedWin)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -579,50 +587,61 @@ func TestGlobEdgeCases(t *testing.T) {
 }
 
 func TestGlobCaseInsensitivity(t *testing.T) {
-    addExtraFiles := func(fs *MockFilesystem) {
-        if fs.platform == "unix" {
-            fs.AddFile("/home/user/documents/File1.TXT", false)
-            fs.AddFile("/home/user/documents/FILE2.txt", false)
-        } else {
-            fs.AddFile(`C:\Users\User\Documents\File1.TXT`, false)
-            fs.AddFile(`C:\Users\User\Documents\FILE2.txt`, false)
-        }
-    }
+	addExtraFiles := func(fs *MockFilesystem) {
+		if fs.platform == "unix" {
+			fs.AddFile("/home/user/documents/File1.TXT", false)
+			fs.AddFile("/home/user/documents/FILE2.txt", false)
+		} else {
+			fs.AddFile(`C:\Users\User\Documents\File1.TXT`, false)
+			fs.AddFile(`C:\Users\User\Documents\FILE2.txt`, false)
+		}
+	}
 
-    cases := []struct {
-        name         string
-        pattern      string
-        ignoreCase   bool
-        wantUnix     int
-        wantWin      int
-    }{
-        {"mixed-case sensitive", "documents/*.TXT", false, 1, 1},
-        {"mixed-case insensitive", "documents/*.TXT", true, 4, 4},
-        {"lower-case sensitive", "documents/*.txt", false, 3, 3},
-        {"lower-case insensitive", "documents/*.txt", true, 4, 4},
-    }
+	cases := []struct {
+		name       string
+		pattern    string
+		ignoreCase bool
+		wantUnix   int
+		wantWin    int
+	}{
+		{"mixed-case sensitive", "documents/*.TXT", false, 1, 1},
+		{"mixed-case insensitive", "documents/*.TXT", true, 4, 4},
+		{"lower-case sensitive", "documents/*.txt", false, 3, 3},
+		{"lower-case insensitive", "documents/*.txt", true, 4, 4},
+	}
 
-    for _, c := range cases {
-        t.Run(c.name+"/unix", func(t *testing.T) {
-            fs := setupLinuxFS(); addExtraFiles(fs)
-            glob := NewGlob(c.pattern, fs, WithIgnoreCase(c.ignoreCase))
-            got, err := glob.ExpandNames(); if err != nil { t.Fatal(err) }
-            if len(got) != c.wantUnix { t.Fatalf("want %d got %d", c.wantUnix, len(got)) }
-        })
-        t.Run(c.name+"/windows", func(t *testing.T) {
-            fs := setupWindowsFS(); addExtraFiles(fs)
-            glob := NewGlob(c.pattern, fs, WithIgnoreCase(c.ignoreCase))
-            got, err := glob.ExpandNames(); if err != nil { t.Fatal(err) }
-            if len(got) != c.wantWin { t.Fatalf("want %d got %d", c.wantWin, len(got)) }
-        })
-    }
+	for _, c := range cases {
+		t.Run(c.name+"/unix", func(t *testing.T) {
+			fs := setupLinuxFS()
+			addExtraFiles(fs)
+			glob := NewGlob(c.pattern, fs, WithIgnoreCase(c.ignoreCase))
+			got, err := glob.ExpandNames()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != c.wantUnix {
+				t.Fatalf("want %d got %d", c.wantUnix, len(got))
+			}
+		})
+		t.Run(c.name+"/windows", func(t *testing.T) {
+			fs := setupWindowsFS()
+			addExtraFiles(fs)
+			glob := NewGlob(c.pattern, fs, WithIgnoreCase(c.ignoreCase))
+			got, err := glob.ExpandNames()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != c.wantWin {
+				t.Fatalf("want %d got %d", c.wantWin, len(got))
+			}
+		})
+	}
 }
-
 
 func TestGlobComplexBraceExpansion(t *testing.T) {
 	testCases := []struct {
-		name        string
-		pattern     string
+		name         string
+		pattern      string
 		expectedUnix []string
 		expectedWin  []string
 	}{
@@ -666,10 +685,10 @@ func TestGlobComplexBraceExpansion(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedUnix)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -683,10 +702,10 @@ func TestGlobComplexBraceExpansion(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
-				
+
 				expected := normalizePathsForComparison(tc.expectedWin)
 				actual := normalizePathsForComparison(results)
-				
+
 				if !reflect.DeepEqual(expected, actual) {
 					t.Errorf("Expected %v, got %v", expected, actual)
 				}
@@ -698,19 +717,19 @@ func TestGlobComplexBraceExpansion(t *testing.T) {
 func TestRegexOrStringCache(t *testing.T) {
 	fs := setupLinuxFS()
 	glob := NewGlob("documents/*.txt", fs)
-	
+
 	// First call should populate cache
 	ros1, err := glob.createRegexOrString("*.txt")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	
+
 	// Second call should return cached result
 	ros2, err := glob.createRegexOrString("*.txt")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	
+
 	// Should be the same object (cached)
 	if ros1 != ros2 {
 		t.Error("Expected cached RegexOrString to be returned")
@@ -724,18 +743,18 @@ func TestGetFilesPublicAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	
+
 	// Should return empty slice for non-matching pattern
 	if len(results) != 0 {
 		t.Errorf("Expected empty results for non-matching pattern, got %d results", len(results))
 	}
-	
+
 	// Test empty pattern
 	results, err = GetFiles("")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	
+
 	if len(results) != 0 {
 		t.Errorf("Expected empty results for empty pattern, got %d results", len(results))
 	}
@@ -783,21 +802,21 @@ func TestUngroup(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			results, err := ungroup(tc.pattern)
-			
+
 			if tc.hasError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
 				return
 			}
-			
+
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			
+
 			sort.Strings(results)
 			sort.Strings(tc.expected)
-			
+
 			if !reflect.DeepEqual(results, tc.expected) {
 				t.Errorf("Expected %v, got %v", tc.expected, results)
 			}
@@ -829,7 +848,7 @@ func TestGlobToRegexPattern(t *testing.T) {
 			name:       "case insensitive",
 			pattern:    "*.TXT",
 			ignoreCase: true,
-			expected: "(?i)^[^/\\\\]*\\.TXT$",
+			expected:   "(?i)^[^/\\\\]*\\.TXT$",
 		},
 		{
 			name:       "character class",
@@ -854,18 +873,18 @@ func TestGlobToRegexPattern(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := globToRegexPattern(tc.pattern, tc.ignoreCase)
-			
+
 			if tc.hasError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
 				return
 			}
-			
+
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			
+
 			if result != tc.expected {
 				t.Errorf("Expected %q, got %q", tc.expected, result)
 			}
@@ -876,7 +895,7 @@ func TestGlobToRegexPattern(t *testing.T) {
 func BenchmarkGlobExpansion(b *testing.B) {
 	fs := setupLinuxFS()
 	glob := NewGlob("documents/**/*.txt", fs)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := glob.ExpandNames()
@@ -889,7 +908,7 @@ func BenchmarkGlobExpansion(b *testing.B) {
 func BenchmarkRegexCache(b *testing.B) {
 	fs := setupLinuxFS()
 	glob := NewGlob("documents/*.txt", fs)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := glob.createRegexOrString("*.txt")
@@ -904,38 +923,38 @@ func TestPlatformSpecificPaths(t *testing.T) {
 	t.Run("unix_paths", func(t *testing.T) {
 		fs := setupLinuxFS()
 		glob := NewGlob("/home/user/documents/*.txt", fs)
-		
+
 		if !glob.isAbsolutePath("/home/user/documents/file.txt") {
 			t.Error("Expected Unix absolute path to be recognized")
 		}
-		
+
 		if glob.isAbsolutePath("relative/path.txt") {
 			t.Error("Expected Unix relative path to not be recognized as absolute")
 		}
-		
+
 		normalized := glob.normalizePathForPattern("home\\user\\documents")
 		expected := "home/user/documents"
 		if normalized != expected {
 			t.Errorf("Expected %q, got %q", expected, normalized)
 		}
 	})
-	
+
 	t.Run("windows_paths", func(t *testing.T) {
 		fs := setupWindowsFS()
 		glob := NewGlob("C:\\Users\\User\\Documents\\*.txt", fs)
-		
+
 		if !glob.isAbsolutePath("C:\\Users\\User\\Documents\\file.txt") {
 			t.Error("Expected Windows absolute path to be recognized")
 		}
-		
+
 		if !glob.isAbsolutePath("\\\\server\\share\\file.txt") {
 			t.Error("Expected Windows UNC path to be recognized")
 		}
-		
+
 		if glob.isAbsolutePath("relative\\path.txt") {
 			t.Error("Expected Windows relative path to not be recognized as absolute")
 		}
-		
+
 		normalized := glob.normalizePathForFS("Users/User/Documents")
 		expected := "Users\\User\\Documents"
 		if normalized != expected {
@@ -955,28 +974,28 @@ func TestErrorHandling(t *testing.T) {
 			platform:  "unix",
 			separator: "/",
 		}
-		
+
 		glob := NewGlob("documents/*.txt", fs)
 		results, err := glob.ExpandNames()
-		
+
 		// Should not return error, but empty results
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
 		}
-		
+
 		if len(results) != 0 {
 			t.Errorf("Expected empty results, got %d", len(results))
 		}
 	})
-	
+
 	t.Run("malformed_patterns", func(t *testing.T) {
 		fs := setupLinuxFS()
-		
+
 		malformedPatterns := []string{
 			"documents/file[12.txt",  // Unterminated character class
 			"documents/{file1,file2", // Unbalanced braces
 		}
-		
+
 		for _, pattern := range malformedPatterns {
 			glob := NewGlob(pattern, fs, WithIgnoreCase(true))
 			_, err := glob.ExpandNames()
@@ -995,28 +1014,28 @@ func TestSpecialDirectories(t *testing.T) {
 		// Add current directory entries
 		fs.AddFile("/home/user/.", true)
 		fs.AddFile("/home/user/..", true)
-		
+
 		glob := NewGlob(".", fs)
 		results, err := glob.ExpandNames()
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
-		
+
 		if len(results) == 0 {
 			t.Error("Expected results for current directory pattern")
 		}
 	})
-	
+
 	t.Run("parent_directory", func(t *testing.T) {
 		fs := setupLinuxFS()
 		fs.AddFile("/home/user/..", true)
-		
+
 		glob := NewGlob("..", fs)
 		results, err := glob.ExpandNames()
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
-		
+
 		if len(results) == 0 {
 			t.Error("Expected results for parent directory pattern")
 		}
@@ -1026,11 +1045,11 @@ func TestSpecialDirectories(t *testing.T) {
 // Test concurrent access to cache
 func TestConcurrentCacheAccess(t *testing.T) {
 	fs := setupLinuxFS()
-	
+
 	// Run multiple goroutines accessing the cache simultaneously
 	done := make(chan bool)
 	errors := make(chan error, 10)
-	
+
 	for i := 0; i < 10; i++ {
 		go func() {
 			defer func() { done <- true }()
@@ -1041,12 +1060,12 @@ func TestConcurrentCacheAccess(t *testing.T) {
 			}
 		}()
 	}
-	
+
 	// Wait for all goroutines to complete
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	
+
 	// Check for errors
 	select {
 	case err := <-errors:
@@ -1060,13 +1079,13 @@ func TestConcurrentCacheAccess(t *testing.T) {
 func TestLargeDirectoryStructure(t *testing.T) {
 	fs := NewMockFilesystem("unix")
 	fs.SetCwd("/home/user")
-	
+
 	// Create a large directory structure
 	fs.AddFile("/", true)
 	fs.AddFile("/home", true)
 	fs.AddFile("/home/user", true)
 	fs.AddFile("/home/user/large", true)
-	
+
 	// Add many files
 	for i := 0; i < 100; i++ {
 		fs.AddFile(fmt.Sprintf("/home/user/large/file%d.txt", i), false)
@@ -1077,13 +1096,13 @@ func TestLargeDirectoryStructure(t *testing.T) {
 			}
 		}
 	}
-	
+
 	glob := NewGlob("large/**/*.txt", fs)
 	results, err := glob.ExpandNames()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	
+
 	// Should find all txt files
 	expectedCount := 100 + 10*10 // 100 direct files + 10 subdirs * 10 files each
 	if len(results) != expectedCount {
@@ -1113,7 +1132,7 @@ func TestPathNormalizationEdgeCases(t *testing.T) {
 		},
 		{
 			name:     "windows_unc_path",
-			platform: "windows", 
+			platform: "windows",
 			input:    "//server/share/file.txt",
 			expected: "\\\\server\\share\\file.txt",
 		},
@@ -1124,12 +1143,12 @@ func TestPathNormalizationEdgeCases(t *testing.T) {
 			expected: "",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := NewMockFilesystem(tc.platform)
 			glob := NewGlob("test", fs)
-			
+
 			result := glob.normalizePathForFS(tc.input)
 			if result != tc.expected {
 				t.Errorf("Expected %q, got %q", tc.expected, result)
@@ -1141,12 +1160,12 @@ func TestPathNormalizationEdgeCases(t *testing.T) {
 // Test RegexOrString functionality
 func TestRegexOrStringFunctionality(t *testing.T) {
 	testCases := []struct {
-		name         string
-		pattern      string
-		input        string
-		ignoreCase   bool
-		shouldMatch  bool
-		expectRegex  bool
+		name        string
+		pattern     string
+		input       string
+		ignoreCase  bool
+		shouldMatch bool
+		expectRegex bool
 	}{
 		{
 			name:        "literal_match",
@@ -1181,22 +1200,22 @@ func TestRegexOrStringFunctionality(t *testing.T) {
 			expectRegex: true,
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := setupLinuxFS()
 			glob := NewGlob("test", fs)
 			glob.IgnoreCase = tc.ignoreCase
-			
+
 			ros, err := glob.createRegexOrString(tc.pattern)
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
-			
+
 			if ros.IsRegex != tc.expectRegex {
 				t.Errorf("Expected IsRegex=%v, got %v", tc.expectRegex, ros.IsRegex)
 			}
-			
+
 			match := ros.IsMatch(tc.input)
 			if match != tc.shouldMatch {
 				t.Errorf("Expected match=%v, got %v", tc.shouldMatch, match)
