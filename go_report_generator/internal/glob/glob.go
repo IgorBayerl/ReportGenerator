@@ -12,14 +12,16 @@
 package glob
 
 import (
-	"fmt" // Keep fmt for fmt.Errorf and fmt.Sprintf
-	"io/fs"
+	"fmt"      // Keep fmt for fmt.Errorf and fmt.Sprintf
 	"log/slog" // Add slog
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filesystem"
 )
 
 var (
@@ -69,78 +71,153 @@ func (ros *RegexOrString) IsMatch(input string) bool {
 	return ros.LiteralPattern == input
 }
 
-// Glob holds the glob pattern and matching options.
 type Glob struct {
-	// OriginalPattern is the glob pattern string as provided by the user.
 	OriginalPattern string
-	// IgnoreCase specifies whether path matching should be case-insensitive. Defaults to true.
-	IgnoreCase bool
+	IgnoreCase      bool
+	FS              filesystem.Filesystem
+	platform        string
 }
 
-// NewGlob creates a new Glob instance with the given pattern.
-// By default, IgnoreCase is true, mimicking the C# original behavior.
-func NewGlob(pattern string) *Glob {
-	return &Glob{
-		OriginalPattern: pattern,
-		IgnoreCase:      true,
+// joinPath joins using the separator that belongs to g.platform
+func (g *Glob) joinPath(elem1, elem2 string) string {
+	if g.platform == "windows" {
+		return filepath.Join(elem1, elem2)
 	}
+	return path.Join(elem1, elem2) // always “/”
 }
 
-// String returns the original pattern string.
-func (g *Glob) String() string {
-	return g.OriginalPattern
+// parentDir returns the directory portion using the right rules
+func (g *Glob) parentDir(p string) string {
+	if g.platform == "windows" {
+		return filepath.Dir(p)
+	}
+	return path.Dir(p)
 }
 
-// ExpandNames performs a pattern match and returns the matched path names as strings.
-// This is equivalent to the C# `Glob.ExpandNames()` which returns `IEnumerable<string>`.
-// Paths returned are absolute.
+// absForPlatform turns a possibly-relative path into an absolute one
+// **without** mixing host-OS separators (§ tests run on Windows while we
+// emulate a *nix filesystem).
+func (g *Glob) absForPlatform(p string) (string, error) {
+	if g.isAbsolutePath(p) {
+		return g.normalizePathForFS(p), nil
+	}
+
+	cwd, err := g.FS.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if g.platform == "windows" {
+		return filepath.Join(cwd, g.normalizePathForFS(p)), nil
+	}
+	// unix – use the slash variant only
+	return path.Clean(path.Join(g.normalizePathForPattern(cwd), p)), nil
+}
+
+// GlobOption configures a Glob at construction time.
+type GlobOption func(*Glob)
+
+// WithIgnoreCase sets the case-insensitive flag.
+func WithIgnoreCase(v bool) GlobOption { return func(g *Glob) { g.IgnoreCase = v } }
+
+func NewGlob(pattern string, fs filesystem.Filesystem, opts ...GlobOption) *Glob {
+	if fs == nil {
+		fs = filesystem.DefaultFS{}
+	}
+
+	platform := "unix"
+	if p, ok := fs.(filesystem.Platformer); ok {
+		platform = p.Platform()
+	} else if _, ok := fs.(filesystem.DefaultFS); ok {
+		if filepath.Separator == '\\' {
+			platform = "windows"
+		}
+	}
+
+	g := &Glob{
+		OriginalPattern: pattern,
+		IgnoreCase:      false,
+		FS:              fs,
+		platform:        platform,
+	}
+
+	for _, opt := range opts {
+		opt(g)
+	}
+
+	return g
+}
+
+func (g *Glob) String() string { return g.OriginalPattern }
+
 func (g *Glob) ExpandNames() ([]string, error) {
-	// In Go, os.FileInfo doesn't store the full path. We will modify `expandInternal`
-	// to return full string paths directly.
-	return g.expandInternal(g.OriginalPattern, false)
+	res, err := g.expandInternal(g.OriginalPattern, false)
+	if err != nil && g.IgnoreCase { // tolerant mode
+		slog.Warn("Ignoring malformed glob pattern",
+			"pattern", g.OriginalPattern, "error", err)
+		return []string{}, nil
+	}
+	return res, err
 }
 
-// Expand performs a pattern match.
-// In C#, this returns IEnumerable<FileSystemInfo>.
-// In Go, we will return a slice of full string paths, as constructing FileSystemInfo-like
-// objects for each match is less idiomatic and often not what's directly needed.
-// If FileSystemInfo-like behavior is truly needed, the caller can os.Stat each path.
-// Paths returned are absolute.
 func (g *Glob) Expand() ([]string, error) {
-	return g.expandInternal(g.OriginalPattern, false)
+	res, err := g.expandInternal(g.OriginalPattern, false)
+	if err != nil && g.IgnoreCase {
+		slog.Warn("Ignoring malformed glob pattern",
+			"pattern", g.OriginalPattern, "error", err)
+		return []string{}, nil
+	}
+	return res, err
+}
+
+// tryWindowsCaseFold searches parentDir entries case-insensitively.
+// Returns a slice with the correct-cased path when found, otherwise nil.
+func (g *Glob) tryWindowsCaseFold(absPath string, dirOnly bool) ([]string, error) {
+	parent := g.parentDir(absPath)
+	want := filepath.Base(absPath)
+
+	entries, err := g.FS.ReadDir(parent)
+	if err != nil {
+		return nil, nil // parent unreadable -> give up silently
+	}
+
+	for _, de := range entries {
+		if strings.EqualFold(de.Name(), want) {
+			cand := g.joinPath(parent, de.Name())
+			info, e2 := g.FS.Stat(cand)
+			if e2 == nil && (!dirOnly || info.IsDir()) {
+				return []string{cand}, nil
+			}
+			break
+		}
+	}
+	return nil, nil
 }
 
 // createRegexOrString compiles a glob pattern segment into a RegexOrString instance.
 // It uses a cache to store and retrieve compiled regexes or literal patterns
 // to avoid redundant compilations.
 func (g *Glob) createRegexOrString(patternSegment string) (*RegexOrString, error) {
-	// Create a cache key that correctly represents the case-sensitivity.
-	// Using string concatenation instead of fmt.Sprintf for minor optimization.
-	var cacheKeyBuilder strings.Builder
-	cacheKeyBuilder.WriteString(patternSegment)
-	cacheKeyBuilder.WriteRune('|')
-	if g.IgnoreCase {
-		cacheKeyBuilder.WriteString("true")
-	} else {
-		cacheKeyBuilder.WriteString("false")
+	hasWildcards := strings.ContainsAny(patternSegment, "*?[]")
+
+	effectiveIC := g.IgnoreCase
+	if !hasWildcards && g.platform == "windows" {
+		effectiveIC = true
 	}
-	cacheKey := cacheKeyBuilder.String()
+
+	cacheKey := patternSegment + "|" + fmt.Sprintf("%t", effectiveIC)
 
 	cacheMutex.Lock()
-	if cached, found := regexOrStringCache[cacheKey]; found {
+	if cached, ok := regexOrStringCache[cacheKey]; ok {
 		cacheMutex.Unlock()
 		return cached, nil
 	}
 	cacheMutex.Unlock()
 
-	// If patternSegment contains no actual glob wildcard characters (excluding '{', '}' which are handled by ungroup),
-	// treat it as a literal string for faster matching.
-	// C# Glob.cs compiles even literal segments if they are not in cache, but this check can be an optimization.
-	if !strings.ContainsAny(patternSegment, "*?[]") {
+	if !hasWildcards {
 		ros := &RegexOrString{
 			IsRegex:        false,
 			LiteralPattern: patternSegment,
-			IgnoreCase:     g.IgnoreCase,
+			IgnoreCase:     effectiveIC,
 		}
 		cacheMutex.Lock()
 		regexOrStringCache[cacheKey] = ros
@@ -150,303 +227,239 @@ func (g *Glob) createRegexOrString(patternSegment string) (*RegexOrString, error
 
 	regexPatternStr, err := globToRegexPattern(patternSegment, g.IgnoreCase)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert glob segment '%s' to regex pattern: %w", patternSegment, err)
+		return nil, fmt.Errorf("failed to convert glob segment %q: %w", patternSegment, err)
 	}
 
 	re, err := regexp.Compile(regexPatternStr)
 	if err != nil {
-		// This might happen if globToRegexPattern produces an invalid regex.
-		return nil, fmt.Errorf("failed to compile regex '%s' from glob segment '%s': %w", regexPatternStr, patternSegment, err)
+		return nil, fmt.Errorf("failed to compile regex %q: %w", regexPatternStr, err)
 	}
 
 	ros := &RegexOrString{
 		CompiledRegex:        re,
 		IsRegex:              true,
-		LiteralPattern:       patternSegment,  // Store original for reference
-		IgnoreCase:           g.IgnoreCase,    // Stored in regex via (?i)
-		OriginalRegexPattern: regexPatternStr, // Store the regex string itself
+		LiteralPattern:       patternSegment,
+		IgnoreCase:           g.IgnoreCase,
+		OriginalRegexPattern: regexPatternStr,
 	}
-
 	cacheMutex.Lock()
 	regexOrStringCache[cacheKey] = ros
 	cacheMutex.Unlock()
 	return ros, nil
 }
 
+// isAbsolutePath checks if a path is absolute for the current platform
+func (g *Glob) isAbsolutePath(path string) bool {
+	if g.platform == "windows" {
+		// Windows absolute paths: C:\... or \\... (UNC) or /... (converted from Unix-style)
+		return (len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')) ||
+			strings.HasPrefix(path, "\\\\") ||
+			strings.HasPrefix(path, "/")
+	}
+	// Unix absolute paths start with /
+	return strings.HasPrefix(path, "/")
+}
+
+// normalizePathForFS converts a path to the format expected by the filesystem
+func (g *Glob) normalizePathForFS(p string) string {
+	if g.platform == "windows" {
+		return strings.ReplaceAll(p, "/", "\\")
+	}
+	return strings.ReplaceAll(p, "\\", "/")
+}
+
+// normalizePathForPattern converts a path to forward slashes for pattern matching
+func (g *Glob) normalizePathForPattern(p string) string {
+	return strings.ReplaceAll(p, "\\", "/")
+}
+
 // expandInternal is the core recursive matching function.
 // It returns a slice of absolute paths for matched files or directories.
-// `path` is the current glob pattern being processed.
+// `pattern` is the current glob pattern being processed.
 // `dirOnly` specifies if only directories should be matched.
-func (g *Glob) expandInternal(path string, dirOnly bool) ([]string, error) {
-	if path == "" {
+func (g *Glob) expandInternal(pattern string, dirOnly bool) ([]string, error) {
+	if pattern == "" {
 		return []string{}, nil
 	}
 
-	// Optimization: if path has no glob characters and case is ignored (C# behavior).
-	// Go's os.Stat is case-sensitive on Unix, case-insensitive on Windows by default.
-	// For strict C# IgnoreCase=true mimicry, this direct check needs care.
-	// However, if IgnoreCase is true, our RegexOrString will handle case-insensitivity.
-	// This optimization is more about avoiding path splitting if it's a literal.
-	isLiteralLookup := true
-	for _, gc := range globCharacters {
-		if strings.ContainsRune(path, gc) {
-			isLiteralLookup = false
-			break
-		}
-	}
+	// Normalize pattern for internal processing (always use forward slashes)
+	normalizedPattern := g.normalizePathForPattern(pattern)
 
-	if isLiteralLookup {
-		// To mimic C# FileSystemInfo.Exists which is case-insensitive on Windows,
-		// and to align with g.IgnoreCase=true, we should probably not rely on os.Stat directly
-		// if g.IgnoreCase is true for non-Windows.
-		// However, if it's truly literal, `os.Stat` is the direct check.
-		// If the path must be matched case-insensitively even if literal,
-		// we'd need to list parent dir and compare.
-		// For this port, if literal, we'll use os.Stat and let OS handle case.
-		// The C# code has `if (this.IgnoreCase && path.IndexOfAny(GlobCharacters) < 0)`
-		// which implies if IgnoreCase is false, it would still go through the main logic.
-		// This seems slightly different than just checking FileSystemInfo.Exists.
-		// For now, let's stick to the C# condition:
-		if g.IgnoreCase && !strings.ContainsAny(path, string(globCharacters)) {
-			absPath, err := filepath.Abs(path)
-			if err != nil {
-				// Path might be syntactically invalid
-				return []string{}, nil
-			}
-			info, err := os.Stat(absPath)
-			if err == nil { // File/Dir exists
-				if !dirOnly || info.IsDir() {
-					return []string{absPath}, nil
-				}
-			}
-			return []string{}, nil // Does not exist or not matching type
-		}
-	}
-
-	parent := filepath.Dir(path)
-	child := filepath.Base(path)
-
-	// In C#, Path.GetDirectoryName(path) can return null if path is a root (e.g. "C:\").
-	// In Go, filepath.Dir("C:\\") is "C:\\"; filepath.Dir("C:") is "."
-	// filepath.Dir("/") is "/"; filepath.Dir("foo") is "."
-	// If parent is ".", it means child is relative to current working directory OR path was just a filename.
-	if parent == "." && !strings.ContainsRune(path, filepath.Separator) { // path was like "file.txt" or "*.txt"
-		cwd, _ := os.Getwd()
-		parent = cwd
-	} else if parent == path { // Happens for root paths like "/" or "C:\"
-		// This means `path` is a root. The `child` is `path` itself.
-		// We search in this root.
-		// If `path` has no glob chars, the optimization above should catch it.
-		// If `path` is `C:\*`, parent=`C:\`, child=`*`.
-		// We treat `parent` as the directory to list, and `child` as the pattern.
-	}
-
-	// Handle C# specific `parent == string.Empty` which translates to current directory.
-	// In Go, `filepath.Dir("file.txt")` is ".", so this might be covered.
-	// If `path` was "file.txt", parent=".", child="file.txt".
-	// If `path` was "/file.txt", parent="/", child="file.txt".
-	if parent == "" { // Should not happen with filepath.Dir normally unless input `path` was strange.
-		cwd, _ := os.Getwd()
-		parent = cwd
-	}
-
-	// Handle groups that might span across path separators, e.g., "{a/b,c}/d"
-	// The C# code checks `child.Count('}') > child.Count('{')`.
-	// This implies that Path.GetFileName might have cut a group in half.
-	// Example: path = "foo/{bar,baz/bing}/file.txt"
-	// parent = "foo/{bar,baz/bing}" (if GetDirectoryName is smart enough, or if path was foo/{b,b/b} )
-	// child = "file.txt"
-	// The C# logic is: if `child` looks like an unterminated group (more '}' than '{'),
-	// it means the group structure was part of the directory path, so `ungroup` the whole `path`.
-	// This is complex to replicate perfectly without knowing how `Path.GetDirectoryName` behaves with such patterns.
-	// Let's assume for Go that `filepath.Dir` and `filepath.Base` give sensible splits,
-	// and `ungroup` primarily works on individual path segments.
-	// The C# check `child.Count(c => c == '}') > child.Count(c => c == '{')` is tricky.
-	// It suggests that `path` itself might be like `prefix{a,b}suffix/child_part_of_suffix`.
-	// If GetFileName resulted in `child_part_of_suffix}` then the condition is met.
-	// This implies `ungroup` should be called on the original `path` if such imbalance in `child` is detected.
-
-	// For simplicity, we'll ungroup `child` first. If `path` itself needs ungrouping due to
-	// separators inside braces, `ungroup` should handle that if it's robust enough.
-	// The C# code specifically calls `this.Expand(group, dirOnly)` for each `group` from `Ungroup(path)`.
-	// This suggests if the brace imbalance is detected, the entire path is re-processed by ungrouping.
-
-	// Simplified check: if path itself contains { and / or \ within the group, it's complex.
-	// The C# logic `if (child.Count(c => c == '}') > child.Count(c => c == '{'))` is a heuristic.
-	// A more direct way: if Path.GetDirectoryName splits a brace group.
-	// For now, we will attempt to handle this by ungrouping `path` if `child` shows imbalance.
-
-	openBracesInChild := strings.Count(child, "{")
-	closeBracesInChild := strings.Count(child, "}")
-
-	if closeBracesInChild > openBracesInChild {
-		// This indicates that a '}' in the child likely closes a '{' from the parent part.
-		// So, the entire path needs to be ungrouped first.
-		groups, err := ungroup(path)
-		if err != nil {
-			return nil, fmt.Errorf("error ungrouping path '%s': %w", path, err)
-		}
-		var allResults []string
-		seenPaths := make(map[string]bool) // To make results distinct like C#'s DistinctBy
-		for _, groupPattern := range groups {
-			expanded, err := g.expandInternal(groupPattern, dirOnly)
-			if err != nil {
-				slog.Warn(
-					"Error expanding group pattern",
-					"pattern", groupPattern,
-					"error", err,
-				)
-				continue
-			}
-			for _, p := range expanded {
-				absP, _ := filepath.Abs(p) // Ensure distinctness with absolute paths
-				if !seenPaths[absP] {
-					allResults = append(allResults, absP)
-					seenPaths[absP] = true
-				}
-			}
-		}
-		return allResults, nil
-	}
-
-	if child == "**" {
-		// `parent` is the directory from which `**` should start.
-		// `expandInternal(parent, true)` gets all directories matching `parent` pattern.
-		parentDirs, err := g.expandInternal(parent, true)
+	// Handle literal paths (no glob characters)
+	if !strings.ContainsAny(normalizedPattern, string(globCharacters)) {
+		absPath, err := g.absForPlatform(pattern)
 		if err != nil {
 			return nil, err
 		}
 
+		info, err := g.FS.Stat(absPath)
+		if err == nil && (!dirOnly || info.IsDir()) {
+			return []string{absPath}, nil
+		}
+
+		// Windows: retry with case-insensitive scan of the parent dir
+		if g.platform == "windows" {
+			if paths, _ := g.tryWindowsCaseFold(absPath, dirOnly); len(paths) > 0 {
+				return paths, nil
+			}
+		}
+		return []string{}, nil
+	}
+
+	// Split path into parent and child components
+	parent := path.Dir(normalizedPattern)
+	child := path.Base(normalizedPattern)
+
+	// Handle root directory case
+	if parent == "." && !g.isAbsolutePath(normalizedPattern) {
+		cwd, err := g.FS.Getwd()
+		if err != nil {
+			return []string{}, fmt.Errorf("failed to get working directory: %w", err)
+		}
+		parent = g.normalizePathForPattern(cwd)
+	}
+
+	// Handle cross-separator brace expansion
+	if strings.Count(child, "}") > strings.Count(child, "{") {
+		return g.handleCrossSeparatorBrace(normalizedPattern, dirOnly)
+	}
+
+	// Handle recursive wildcard `**` as the final segment
+	if child == "**" {
+		parentDirs, err := g.expandInternal(g.normalizePathForFS(parent), true)
+		if err != nil {
+			return nil, err
+		}
 		var allResults []string
 		seenPaths := make(map[string]bool)
-
 		for _, pDir := range parentDirs {
-			// Add the parent directory itself if it matches dirOnly criteria
-			// (it's already a dir because expandInternal(parent, true) was called)
-			absPDir, _ := filepath.Abs(pDir)
-			if !seenPaths[absPDir] {
-				allResults = append(allResults, absPDir)
-				seenPaths[absPDir] = true
-			}
-
-			// Now get all subdirectories recursively
-			subItems, err := getRecursiveDirectoriesAndFiles(pDir, dirOnly)
+			// Get ALL descendants, including the parent dir itself
+			descendants, err := g.getRecursiveDirectoriesAndFiles(pDir, dirOnly)
 			if err != nil {
-				slog.Warn(
-					"Error during '**' recursion",
-					"path", pDir,
-					"error", err,
-				)
 				continue
 			}
-			for _, itemPath := range subItems {
-				absItemPath, _ := filepath.Abs(itemPath)
-				if !seenPaths[absItemPath] {
-					allResults = append(allResults, absItemPath)
-					seenPaths[absItemPath] = true
+			// Include parent directory itself
+			if !dirOnly {
+				_, err := g.FS.Stat(pDir)
+				if err == nil && !seenPaths[pDir] {
+					allResults = append(allResults, pDir)
+					seenPaths[pDir] = true
+				}
+			} else if !seenPaths[pDir] {
+				allResults = append(allResults, pDir)
+				seenPaths[pDir] = true
+			}
+			// Add descendants
+			for _, d := range descendants {
+				if !seenPaths[d] {
+					allResults = append(allResults, d)
+					seenPaths[d] = true
 				}
 			}
 		}
 		return allResults, nil
 	}
 
-	// Expand parent(s) first. This list should contain absolute paths to directories.
-	expandedParentDirs, err := g.expandInternal(parent, true)
+	return g.processPathSegment(parent, child, dirOnly)
+}
+
+// handleCrossSeparatorBrace handles patterns like "{a/b,c}/d.txt"
+func (g *Glob) handleCrossSeparatorBrace(normalizedPattern string, dirOnly bool) ([]string, error) {
+	groups, err := ungroup(normalizedPattern)
+	if err != nil {
+		return nil, fmt.Errorf("error ungrouping path '%s': %w", normalizedPattern, err)
+	}
+	var allResults []string
+	seenPaths := make(map[string]bool)
+	for _, groupPattern := range groups {
+		expanded, err := g.expandInternal(g.normalizePathForFS(groupPattern), dirOnly)
+		if err != nil {
+			slog.Warn("Error expanding group pattern", "pattern", groupPattern, "error", err)
+			continue
+		}
+		for _, p := range expanded {
+			if !seenPaths[p] {
+				allResults = append(allResults, p)
+				seenPaths[p] = true
+			}
+		}
+	}
+	return allResults, nil
+}
+
+// processPathSegment is the main workhorse for a standard `parent/child` pattern.
+func (g *Glob) processPathSegment(parentPattern, childPattern string, dirOnly bool) ([]string, error) {
+	// Convert parent pattern back to filesystem format for expansion
+	parentForFS := g.normalizePathForFS(parentPattern)
+	expandedParentDirs, err := g.expandInternal(parentForFS, true)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ungroup the child segment (e.g., "{a,b}.txt" -> "a.txt", "b.txt")
-	ungroupedChildSegments, err := ungroup(child)
+	ungroupedChildSegments, err := ungroup(childPattern)
 	if err != nil {
-		return nil, fmt.Errorf("error ungrouping child segment '%s': %w", child, err)
+		return nil, fmt.Errorf("error ungrouping child segment '%s': %w", childPattern, err)
 	}
 
 	var childRegexes []*RegexOrString
 	for _, segment := range ungroupedChildSegments {
 		ros, err := g.createRegexOrString(segment)
 		if err != nil {
-			slog.Warn(
-				"Malformed glob segment in child, skipping",
-				"segment", segment,
-				"error", err,
-			)
-			continue
+			return nil, err
 		}
 		childRegexes = append(childRegexes, ros)
 	}
 
 	var allMatches []string
-	seenPaths := make(map[string]bool) // For DistinctBy equivalent
+	seenPaths := make(map[string]bool)
 
 	for _, parentDir := range expandedParentDirs {
-		absParentDir, err := filepath.Abs(parentDir)
-		if err != nil { // Should not happen if expandInternal returns abs paths
-			slog.Warn(
-				"Could not get absolute path for parentDir, skipping",
-				"parentDir", parentDir,
-				"error", err,
-			)
-			continue
-		}
-
-		// List entries in parentDir
-		entries, readDirErr := os.ReadDir(absParentDir)
+		entries, readDirErr := g.FS.ReadDir(parentDir)
 		if readDirErr != nil {
-			if os.IsNotExist(readDirErr) { // Parent dir from a previous glob part might not exist
+			if os.IsNotExist(readDirErr) {
 				continue
 			}
-			slog.Warn(
-				"Error reading directory",
-				"directory", absParentDir,
-				"error", readDirErr,
-			)
+			slog.Warn("Error reading directory", "directory", parentDir, "error", readDirErr)
 			continue
 		}
 
 		for _, entry := range entries {
-			if !dirOnly || entry.IsDir() { // Check dirOnly constraint
+			if !dirOnly || entry.IsDir() {
 				for _, ros := range childRegexes {
 					if ros.IsMatch(entry.Name()) {
-						absEntryPath := filepath.Join(absParentDir, entry.Name())
+						absEntryPath := g.joinPath(parentDir, entry.Name())
 						if !seenPaths[absEntryPath] {
 							allMatches = append(allMatches, absEntryPath)
 							seenPaths[absEntryPath] = true
 						}
-						break // Matched one of the child regexes
+						break
 					}
 				}
 			}
 		}
 
-		// Handle C# Glob.cs specific matching for "." and ".."
-		// If childRegexes contains regexes that specifically match "." or "..".
-		// `ros.OriginalRegexPattern` stores the regex string (e.g., "^\.$" or "^\.\.$").
+		// Handle '.' and '..' matching
 		for _, ros := range childRegexes {
 			if ros.OriginalRegexPattern == `^\.$` { // Matches "."
-				if !seenPaths[absParentDir] { // Yield the parent directory itself
-					allMatches = append(allMatches, absParentDir)
-					seenPaths[absParentDir] = true
+				if !seenPaths[parentDir] {
+					allMatches = append(allMatches, parentDir)
+					seenPaths[parentDir] = true
 				}
 			} else if ros.OriginalRegexPattern == `^\.\.$` { // Matches ".."
-				grandParentDir := filepath.Dir(absParentDir)
-				// Ensure grandParentDir is not same as absParentDir (e.g., if absParentDir is root)
-				if grandParentDir != absParentDir {
-					absGrandParentDir, _ := filepath.Abs(grandParentDir)
-					if !seenPaths[absGrandParentDir] {
-						allMatches = append(allMatches, absGrandParentDir)
-						seenPaths[absGrandParentDir] = true
-					}
-				} else { // absParentDir is likely a root, ".." refers to itself or is invalid
-					if !seenPaths[absParentDir] {
-						allMatches = append(allMatches, absParentDir)
-						seenPaths[absParentDir] = true
+				grandParentDir := g.parentDir(parentDir)
+				if grandParentDir != parentDir { // Avoids root's parent being itself
+					if !seenPaths[grandParentDir] {
+						allMatches = append(allMatches, grandParentDir)
+						seenPaths[grandParentDir] = true
 					}
 				}
 			}
 		}
 	}
 
+	if allMatches == nil {
+		return []string{}, nil
+	}
 	return allMatches, nil
 }
 
@@ -455,43 +468,49 @@ func (g *Glob) expandInternal(path string, dirOnly bool) ([]string, error) {
 func globToRegexPattern(globSegment string, ignoreCase bool) (string, error) {
 	var regex strings.Builder
 	if ignoreCase {
-		regex.WriteString("(?i)") // Case-insensitive matching
+		regex.WriteString("(?i)")
 	}
-	regex.WriteRune('^') // Anchor at the beginning
+	regex.WriteRune('^')
 
-	inCharClass := false
-	for _, r := range globSegment {
+	// Handle `**` as a complete segment
+	if globSegment == "**" {
+		regex.WriteString(".*") // `**` as a segment should match anything (including nothing)
+	} else {
+		// Replace `**` with a regex that matches any character (including path separators)
+		// This is for patterns like `a**b.txt`
+		globSegment = strings.ReplaceAll(globSegment, "**", ".*")
+
+		inCharClass := false
+		for _, r := range globSegment {
+			if inCharClass {
+				if r == ']' {
+					inCharClass = false
+				}
+				regex.WriteRune(r)
+				continue
+			}
+
+			switch r {
+			case '*':
+				regex.WriteString("[^/\\\\]*") // * matches anything except path separators (both / and \)
+			case '?':
+				regex.WriteRune('.')
+			case '[':
+				inCharClass = true
+				regex.WriteRune(r)
+			default:
+				if _, isSpecial := regexSpecialChars[r]; isSpecial {
+					regex.WriteRune('\\')
+				}
+				regex.WriteRune(r)
+			}
+		}
 		if inCharClass {
-			if r == ']' {
-				inCharClass = false
-			}
-			// Go's regex engine handles character classes like [abc] or [a-z] directly.
-			// Special chars inside [...] usually don't need escaping, except for '-' if not at start/end,
-			// and ']' if it's the first char after '['. Go's regexp is mostly POSIX ERE.
-			regex.WriteRune(r)
-			continue
-		}
-
-		switch r {
-		case '*':
-			regex.WriteString(".*") // Matches zero or more characters
-		case '?':
-			regex.WriteRune('.') // Matches any single character
-		case '[':
-			inCharClass = true
-			regex.WriteRune(r)
-		default:
-			if _, isSpecial := regexSpecialChars[r]; isSpecial {
-				regex.WriteRune('\\') // Escape regex metacharacters
-			}
-			regex.WriteRune(r)
+			return "", fmt.Errorf("unterminated character class: %s", globSegment)
 		}
 	}
 
-	if inCharClass { // Unterminated character class
-		return "", fmt.Errorf("unterminated character class in glob segment: %s", globSegment)
-	}
-	regex.WriteRune('$') // Anchor at the end
+	regex.WriteRune('$')
 	return regex.String(), nil
 }
 
@@ -578,40 +597,58 @@ func ungroup(path string) ([]string, error) {
 }
 
 // getRecursiveDirectoriesAndFiles is a helper for `**` when it's the last segment.
-// It lists the root directory itself and all files/directories under it.
+// It lists all files/directories under the root directory recursively.
 // If dirOnly is true, only directories are returned.
 // Returns absolute paths.
-func getRecursiveDirectoriesAndFiles(root string, dirOnly bool) ([]string, error) {
+func (g *Glob) getRecursiveDirectoriesAndFiles(root string, dirOnly bool) ([]string, error) {
 	var paths []string
-	absRoot, err := filepath.Abs(root)
+
+	rootInfo, err := g.FS.Stat(root)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for '%s': %w", root, err)
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
 	}
 
-	err = filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
+	if !rootInfo.IsDir() {
+		return []string{}, nil
+	}
+
+	queue := []string{root}
+	visited := make(map[string]struct{})
+
+	for len(queue) > 0 {
+		currentPath := queue[0]
+		queue = queue[1:]
+
+		if _, ok := visited[currentPath]; ok {
+			continue
+		}
+		visited[currentPath] = struct{}{}
+
+		entries, err := g.FS.ReadDir(currentPath)
 		if err != nil {
-			slog.Warn(
-				"Error accessing path during recursive search",
-				"path", path,
-				"error", err,
-			)
-			if os.IsPermission(err) { // Skip permission denied errors to continue walk
-				if d != nil && d.IsDir() {
-					return fs.SkipDir
-				}
-				return nil
+			slog.Warn("Error reading directory", "path", currentPath, "error", err)
+			continue
+		}
+
+		for _, entry := range entries {
+			nextPath := g.joinPath(currentPath, entry.Name())
+
+			entryInfo, err := g.FS.Stat(nextPath)
+			if err != nil {
+				slog.Warn("Could not stat entry", "path", nextPath, "error", err)
+				continue
 			}
-			return err // Propagate other errors
-		}
 
-		if !dirOnly || d.IsDir() {
-			paths = append(paths, path)
+			if !dirOnly || entryInfo.IsDir() {
+				paths = append(paths, nextPath)
+			}
+			if entryInfo.IsDir() {
+				queue = append(queue, nextPath)
+			}
 		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("error walking directory '%s': %w", absRoot, err)
 	}
 	return paths, nil
 }
@@ -626,7 +663,7 @@ func GetFiles(pattern string) ([]string, error) {
 		return []string{}, nil
 	}
 
-	g := NewGlob(pattern)
+	g := NewGlob(pattern, nil)
 	// Call ExpandNames which uses expandInternal.
 	// expandInternal is designed to return errors for fundamental issues.
 	return g.ExpandNames()
