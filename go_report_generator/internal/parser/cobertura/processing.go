@@ -70,12 +70,12 @@ type fileProcessingMetrics struct {
 
 // processingOrchestrator holds dependencies and state for a single parsing operation.
 type processingOrchestrator struct {
-	fileReader                      FileReader
-	config                          parser.ParserConfig
-	sourceDirs                      []string
+	fileReader                        FileReader
+	config                            parser.ParserConfig
+	sourceDirs                        []string
 	uniqueFilePathsForGrandTotalLines map[string]int
-	processedAssemblyFiles          map[string]struct{}
-	supportsBranchCoverage          bool 
+	processedAssemblyFiles            map[string]struct{}
+	supportsBranchCoverage            bool
 }
 
 // newProcessingOrchestrator creates a new orchestrator for processing Cobertura data.
@@ -83,17 +83,16 @@ func newProcessingOrchestrator(
 	fileReader FileReader,
 	config parser.ParserConfig,
 	sourceDirs []string,
-	supportsBranchCoverage bool, 
+	supportsBranchCoverage bool,
 ) *processingOrchestrator {
 	return &processingOrchestrator{
-		fileReader:                      fileReader,
-		config:                          config,
-		sourceDirs:                      sourceDirs,
+		fileReader:                        fileReader,
+		config:                            config,
+		sourceDirs:                        sourceDirs,
 		uniqueFilePathsForGrandTotalLines: make(map[string]int),
-		supportsBranchCoverage:          supportsBranchCoverage,
+		supportsBranchCoverage:            supportsBranchCoverage,
 	}
 }
-
 
 // processPackages is the entry point for the orchestrator.
 func (o *processingOrchestrator) processPackages(packages []inputxml.PackageXML) ([]model.Assembly, error) {
@@ -410,7 +409,6 @@ func (o *processingOrchestrator) processMethodLines(methodXML inputxml.MethodXML
 		method.BranchRate = &rate
 	}
 }
-
 
 // processLineXML transforms a single line XML element into a rich model.Line object.
 func (o *processingOrchestrator) processLineXML(lineXML inputxml.LineXML) (model.Line, fileProcessingMetrics) {

@@ -91,7 +91,7 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 	effectiveSourceDirs := cp.getEffectiveSourceDirs(config, sourceDirsFromXML)
 
 	// Create the orchestrator, passing true for supportsBranchCoverage
-	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs, true) 
+	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs, true)
 
 	assemblies, err := orchestrator.processPackages(rawReport.Packages.Package)
 	if err != nil {

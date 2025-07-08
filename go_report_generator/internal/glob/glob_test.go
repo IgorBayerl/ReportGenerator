@@ -4,17 +4,33 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	glob "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/glob"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/glob"
+	assert "github.com/IgorBayerl/ReportGenerator/go_report_generator/testutil/asserts"
 )
 
-// MockFileInfo implements fs.FileInfo for testing
+// Cross-platform execution helper
+func forPlatforms(t *testing.T, fn func(t *testing.T, fs *MockFilesystem)) {
+	t.Helper()
+
+	t.Run("unix", func(t *testing.T) {
+		t.Parallel()
+		fn(t, setupLinuxFS())
+	})
+
+	t.Run("windows", func(t *testing.T) {
+		t.Parallel()
+		fn(t, setupWindowsFS())
+	})
+}
+
+// Mock filesystem
 type MockFileInfo struct {
 	name    string
 	size    int64
@@ -28,9 +44,8 @@ func (m MockFileInfo) Size() int64        { return m.size }
 func (m MockFileInfo) Mode() fs.FileMode  { return m.mode }
 func (m MockFileInfo) ModTime() time.Time { return m.modTime }
 func (m MockFileInfo) IsDir() bool        { return m.isDir }
-func (m MockFileInfo) Sys() interface{}   { return nil }
+func (m MockFileInfo) Sys() any           { return nil }
 
-// MockDirEntry implements fs.DirEntry for testing
 type MockDirEntry struct {
 	name  string
 	isDir bool
@@ -42,7 +57,6 @@ func (m MockDirEntry) IsDir() bool                { return m.isDir }
 func (m MockDirEntry) Type() fs.FileMode          { return m.info.Mode() }
 func (m MockDirEntry) Info() (fs.FileInfo, error) { return m.info, nil }
 
-// MockFilesystem implements filesystem.Filesystem for testing
 type MockFilesystem struct {
 	files     map[string]MockFileInfo
 	dirs      map[string][]MockDirEntry
@@ -52,83 +66,75 @@ type MockFilesystem struct {
 }
 
 func NewMockFilesystem(platform string) *MockFilesystem {
-	separator := "/"
+	sep := "/"
 	if platform == "windows" {
-		separator = "\\"
+		sep = `\`
 	}
 	return &MockFilesystem{
-		files:     make(map[string]MockFileInfo),
-		dirs:      make(map[string][]MockDirEntry),
+		files:     map[string]MockFileInfo{},
+		dirs:      map[string][]MockDirEntry{},
 		cwd:       "/",
 		platform:  platform,
-		separator: separator,
+		separator: sep,
 	}
 }
 
-func (m *MockFilesystem) Platform() string {
-	return m.platform
-}
+func (m *MockFilesystem) Platform() string { return m.platform }
 
-func (m *MockFilesystem) normalizePath(path string) string {
+func (m *MockFilesystem) normalizePath(p string) string {
 	if m.platform == "windows" {
-		path = strings.ReplaceAll(path, "/", "\\")
-		if len(path) >= 2 && path[1] == ':' {
-			return path
+		p = strings.ReplaceAll(p, "/", `\`)
+		switch {
+		case len(p) >= 2 && p[1] == ':':
+			return p // already absolute
+		case strings.HasPrefix(p, `\\`):
+			return p // UNC
+		case strings.HasPrefix(p, `\`):
+			return `C:` + p // rooted but drive-less
+		default:
+			return p // relative
 		}
-		if strings.HasPrefix(path, "\\\\") {
-			return path
-		}
-		if !strings.HasPrefix(path, "\\") {
-			return path
-		}
-		if strings.HasPrefix(path, "\\") && len(path) > 1 {
-			return "C:" + path
-		}
-	} else {
-		// For Unix, convert all backslashes to forward slashes.
-		path = strings.ReplaceAll(path, "\\", "/")
 	}
-	return path
+	return strings.ReplaceAll(p, `\`, "/")
 }
 
 func (m *MockFilesystem) Stat(name string) (fs.FileInfo, error) {
-	absName, err := m.Abs(name)
+	abs, err := m.Abs(name)
 	if err != nil {
 		return nil, &fs.PathError{Op: "stat", Path: name, Err: err}
 	}
-	if info, exists := m.files[absName]; exists {
+	if info, ok := m.files[abs]; ok {
 		return info, nil
 	}
 	return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrNotExist}
 }
 
 func (m *MockFilesystem) ReadDir(name string) ([]fs.DirEntry, error) {
-	absName, err := m.Abs(name)
+	abs, err := m.Abs(name)
 	if err != nil {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: err}
 	}
-	if entries, exists := m.dirs[absName]; exists {
-		dirEntries := make([]fs.DirEntry, len(entries))
-		for i, entry := range entries {
-			dirEntries[i] = entry
-		}
-		return dirEntries, nil
+	entries, ok := m.dirs[abs]
+	if !ok {
+		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
 	}
-	return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
+	out := make([]fs.DirEntry, len(entries))
+	for i := range entries {
+		out[i] = entries[i]
+	}
+	return out, nil
 }
 
-func (m *MockFilesystem) Getwd() (string, error) {
-	return m.cwd, nil
-}
+func (m *MockFilesystem) Getwd() (string, error) { return m.cwd, nil }
 
 func (m *MockFilesystem) Abs(path string) (string, error) {
 	path = m.normalizePath(path)
 	if m.platform == "windows" {
-		if filepath.IsAbs(path) {
+		if filepath.IsAbs(path) || strings.HasPrefix(path, `C:`) {
 			return path, nil
 		}
-		if strings.HasPrefix(path, "\\") {
-			return "C:" + path, nil
+		if strings.HasPrefix(path, `\`) {
+			return `C:` + path, nil
 		}
 		return filepath.Join(m.cwd, path), nil
 	}
@@ -139,45 +145,36 @@ func (m *MockFilesystem) Abs(path string) (string, error) {
 }
 
 func (m *MockFilesystem) AddFile(path string, isDir bool) {
-	// Use the mock's own Abs method to ensure keys are absolute.
-	absPath, _ := m.Abs(path)
-	path = absPath
+	abs, _ := m.Abs(path)
 
 	info := MockFileInfo{
-		name:    filepath.Base(path),
+		name:    filepath.Base(abs),
 		size:    100,
-		mode:    0644,
+		mode:    0o644,
 		modTime: time.Now(),
 		isDir:   isDir,
 	}
 	if isDir {
-		info.mode = fs.ModeDir | 0755
+		info.mode = fs.ModeDir | 0o755
 	}
+	m.files[abs] = info
 
-	m.files[path] = info
-
-	// Add to parent directory listing
-	parent := filepath.Dir(path)
-	if parent != path { // Avoid infinite loop at root
-		entry := MockDirEntry{
-			name:  info.name,
-			isDir: isDir,
-			info:  info,
-		}
-		m.dirs[parent] = append(m.dirs[parent], entry)
+	parent := filepath.Dir(abs)
+	if parent != abs {
+		m.dirs[parent] = append(m.dirs[parent], MockDirEntry{
+			name: info.name, isDir: isDir, info: info,
+		})
 	}
 }
 
-func (m *MockFilesystem) SetCwd(cwd string) {
-	m.cwd = m.normalizePath(cwd)
-}
+func (m *MockFilesystem) SetCwd(cwd string) { m.cwd = m.normalizePath(cwd) }
 
-// unused methods in this package
-func (m *MockFilesystem) MkdirAll(path string, perm fs.FileMode) error               { return nil }
-func (m *MockFilesystem) Create(path string) (io.WriteCloser, error)                 { return nil, nil }
-func (m *MockFilesystem) Open(path string) (fs.File, error)                          { return nil, nil }
-func (m *MockFilesystem) ReadFile(path string) ([]byte, error)                       { return nil, nil }
-func (m *MockFilesystem) WriteFile(path string, data []byte, perm fs.FileMode) error { return nil }
+// Stubbed-out methods not needed in these tests.
+func (*MockFilesystem) MkdirAll(string, fs.FileMode) error          { return nil }
+func (*MockFilesystem) Create(string) (io.WriteCloser, error)       { return nil, nil }
+func (*MockFilesystem) Open(string) (fs.File, error)                { return nil, nil }
+func (*MockFilesystem) ReadFile(string) ([]byte, error)             { return nil, nil }
+func (*MockFilesystem) WriteFile(string, []byte, fs.FileMode) error { return nil }
 
 // Test helper functions
 func setupLinuxFS() *MockFilesystem {
@@ -241,21 +238,23 @@ func normalizePathsForComparison(paths []string) []string {
 	return normalized
 }
 
-func TestGlobBasicPatterns(t *testing.T) {
-	testCases := []struct {
-		name         string
-		pattern      string
-		expectedUnix []string
-		expectedWin  []string
+func TestExpandNames_BasicPatterns_ReturnExpected(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		pattern  string
+		wantUnix []string
+		wantWin  []string
 	}{
 		{
 			name:    "single asterisk",
 			pattern: "documents/*.txt",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 			},
@@ -263,11 +262,11 @@ func TestGlobBasicPatterns(t *testing.T) {
 		{
 			name:    "question mark",
 			pattern: "documents/file?.txt",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 			},
@@ -275,12 +274,12 @@ func TestGlobBasicPatterns(t *testing.T) {
 		{
 			name:    "double asterisk recursive",
 			pattern: "documents/**/*.txt",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 				"/home/user/documents/subdir/nested.txt",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 				"C:/Users/User/Documents/subdir/nested.txt",
@@ -289,11 +288,11 @@ func TestGlobBasicPatterns(t *testing.T) {
 		{
 			name:    "character class",
 			pattern: "documents/file[12].txt",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 			},
@@ -301,133 +300,109 @@ func TestGlobBasicPatterns(t *testing.T) {
 		{
 			name:    "brace expansion",
 			pattern: "documents/{file1,file2}.txt",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 			},
 		},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range cases {
+		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
-			// Test Unix
-			t.Run("unix", func(t *testing.T) {
-				fs := setupLinuxFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
+			t.Parallel()
+			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+				// Arrange
+				g := glob.NewGlob(tc.pattern, fs)
+
+				// Act
+				got, err := g.ExpandNames()
+
+				// Assert
 				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
+					t.Fatalf("unexpected err: %v", err)
 				}
-
-				expected := normalizePathsForComparison(tc.expectedUnix)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
+				want := tc.wantUnix
+				if fs.platform == "windows" {
+					want = tc.wantWin
 				}
-			})
-
-			// Test Windows
-			t.Run("windows", func(t *testing.T) {
-				fs := setupWindowsFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
-				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
-				}
-
-				expected := normalizePathsForComparison(tc.expectedWin)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
-				}
+				assert.Equal(t, want, got, assert.CmpPaths...)
 			})
 		})
 	}
 }
 
-func TestGlobAbsolutePaths(t *testing.T) {
-	testCases := []struct {
-		name         string
-		pattern      string
-		expectedUnix []string
-		expectedWin  []string
+func TestExpandNames_AbsolutePaths_CorrectPerPlatform(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		pattern  string
+		wantUnix []string
+		wantWin  []string
 	}{
 		{
 			name:    "absolute path unix",
 			pattern: "/home/user/documents/*.txt",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 			},
-			expectedWin: []string{}, // Should work differently on Windows
+			wantWin: []string{}, // Should work differently on Windows
 		},
 		{
-			name:         "absolute path windows",
-			pattern:      "C:\\Users\\User\\Documents\\*.txt",
-			expectedUnix: []string{}, // Should work differently on Unix
-			expectedWin: []string{
+			name:     "absolute path windows",
+			pattern:  "C:\\Users\\User\\Documents\\*.txt",
+			wantUnix: []string{}, // Should work differently on Unix
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 			},
 		},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range cases {
+		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
-			// Test Unix
-			t.Run("unix", func(t *testing.T) {
-				fs := setupLinuxFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
+			t.Parallel()
+			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+				// Arrange
+				g := glob.NewGlob(tc.pattern, fs)
+
+				// Act
+				got, err := g.ExpandNames()
+
+				// Assert
 				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
+					t.Fatalf("unexpected err: %v", err)
 				}
-
-				expected := normalizePathsForComparison(tc.expectedUnix)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
+				want := tc.wantUnix
+				if fs.platform == "windows" {
+					want = tc.wantWin
 				}
-			})
-
-			// Test Windows
-			t.Run("windows", func(t *testing.T) {
-				fs := setupWindowsFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
-				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
-				}
-
-				expected := normalizePathsForComparison(tc.expectedWin)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
-				}
+				assert.Equal(t, want, got, assert.CmpPaths...)
 			})
 		})
 	}
 }
 
-func TestGlobRecursivePatterns(t *testing.T) {
-	testCases := []struct {
-		name         string
-		pattern      string
-		expectedUnix []string
-		expectedWin  []string
+func TestExpandNames_RecursivePatterns_ReturnExpected(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		pattern  string
+		wantUnix []string
+		wantWin  []string
 	}{
 		{
 			name:    "recursive all files",
 			pattern: "documents/**",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents",
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
@@ -437,7 +412,7 @@ func TestGlobRecursivePatterns(t *testing.T) {
 				"/home/user/documents/subdir/deep",
 				"/home/user/documents/subdir/deep/file.log",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents",
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
@@ -451,12 +426,12 @@ func TestGlobRecursivePatterns(t *testing.T) {
 		{
 			name:    "recursive specific extension",
 			pattern: "**/*.txt",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 				"/home/user/documents/subdir/nested.txt",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 				"C:/Users/User/Documents/subdir/nested.txt",
@@ -464,131 +439,195 @@ func TestGlobRecursivePatterns(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range cases {
+		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
-			// Test Unix
-			t.Run("unix", func(t *testing.T) {
-				fs := setupLinuxFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
+			t.Parallel()
+			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+				// Arrange
+				g := glob.NewGlob(tc.pattern, fs)
+
+				// Act
+				got, err := g.ExpandNames()
+
+				// Assert
 				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
+					t.Fatalf("unexpected err: %v", err)
 				}
-
-				expected := normalizePathsForComparison(tc.expectedUnix)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
+				want := tc.wantUnix
+				if fs.platform == "windows" {
+					want = tc.wantWin
 				}
-			})
-
-			// Test Windows
-			t.Run("windows", func(t *testing.T) {
-				fs := setupWindowsFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
-				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
-				}
-
-				expected := normalizePathsForComparison(tc.expectedWin)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
-				}
+				assert.Equal(t, want, got, assert.CmpPaths...)
 			})
 		})
 	}
 }
 
-func TestGlobEdgeCases(t *testing.T) {
-	testCases := []struct {
-		name        string
-		pattern     string
-		shouldError bool
+func TestExpandNames_InvalidGlob_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		pattern string
 	}{
 		{
-			name:        "empty pattern",
-			pattern:     "",
-			shouldError: false,
+			name:    "unbalanced braces",
+			pattern: "documents/{file1,file2.txt",
 		},
 		{
-			name:        "unbalanced braces",
-			pattern:     "documents/{file1,file2.txt",
-			shouldError: true,
-		},
-		{
-			name:        "unterminated character class",
-			pattern:     "documents/file[12.txt",
-			shouldError: true,
-		},
-		{
-			name:        "literal path exists",
-			pattern:     "documents/file1.txt",
-			shouldError: false,
-		},
-		{
-			name:        "literal path doesn't exist",
-			pattern:     "documents/nonexistent.txt",
-			shouldError: false,
+			name:    "unterminated character class",
+			pattern: "documents/file[12.txt",
 		},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range cases {
+		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
-			// Test Unix
-			t.Run("unix", func(t *testing.T) {
-				fs := setupLinuxFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
+			t.Parallel()
+			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+				// Arrange
+				g := glob.NewGlob(tc.pattern, fs)
 
-				if tc.shouldError {
-					if err == nil {
-						// The SUT logs a warning but doesn't return an error.
-						// This test previously failed because it expected an error.
-						// We confirm that no results are returned in this case.
-						if len(results) != 0 {
-							t.Errorf("Expected empty results for malformed pattern, but got %d", len(results))
-						}
-					}
-				} else {
-					if err != nil {
-						t.Errorf("Unexpected error: %v", err)
-					}
-					if results == nil {
-						t.Error("Results should not be nil")
-					}
+				// Act
+				got, err := g.ExpandNames()
+
+				// Assert
+				if err == nil {
+					t.Errorf("expected error for malformed pattern %q", tc.pattern)
 				}
-			})
-
-			// Test Windows
-			t.Run("windows", func(t *testing.T) {
-				fs := setupWindowsFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
-
-				if tc.shouldError {
-					if err == nil {
-						if len(results) != 0 {
-							t.Errorf("Expected empty results for malformed pattern, but got %d", len(results))
-						}
-					}
-				} else {
-					if err != nil {
-						t.Errorf("Unexpected error: %v", err)
-					}
-					if results == nil {
-						t.Error("Results should not be nil")
-					}
+				if len(got) != 0 {
+					t.Errorf("expected empty results for malformed pattern, got %d", len(got))
 				}
 			})
 		})
 	}
 }
 
-func TestGlobCaseInsensitivity(t *testing.T) {
+func TestExpandNames_NonGlobInputs_ReturnsPathOrEmpty(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		pattern  string
+		wantUnix []string
+		wantWin  []string
+	}{
+		{
+			name:     "empty pattern",
+			pattern:  "",
+			wantUnix: []string{},
+			wantWin:  []string{},
+		},
+		{
+			name:    "literal path exists",
+			pattern: "documents/file1.txt",
+			wantUnix: []string{
+				"/home/user/documents/file1.txt",
+			},
+			wantWin: []string{
+				"C:/Users/User/Documents/file1.txt",
+			},
+		},
+		{
+			name:     "literal path doesn't exist",
+			pattern:  "documents/nonexistent.txt",
+			wantUnix: []string{},
+			wantWin:  []string{},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc // capture
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+				// Arrange
+				g := glob.NewGlob(tc.pattern, fs)
+
+				// Act
+				got, err := g.ExpandNames()
+
+				// Assert
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				want := tc.wantUnix
+				if fs.platform == "windows" {
+					want = tc.wantWin
+				}
+				assert.Equal(t, want, got, assert.CmpPaths...)
+			})
+		})
+	}
+}
+
+func TestExpandNames_FilesystemError_ReturnsEmptySlice(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	fs := &MockFilesystem{
+		files:     make(map[string]MockFileInfo),
+		dirs:      make(map[string][]MockDirEntry),
+		cwd:       "/",
+		platform:  "unix",
+		separator: "/",
+	}
+	g := glob.NewGlob("documents/*.txt", fs)
+
+	// Act
+	got, err := g.ExpandNames()
+
+	// Assert
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty results, got %d", len(got))
+	}
+}
+
+func TestExpandNames_LargeTree_FindsAllTxtFiles(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	fs := NewMockFilesystem("unix")
+	fs.SetCwd("/home/user")
+	fs.AddFile("/", true)
+	fs.AddFile("/home", true)
+	fs.AddFile("/home/user", true)
+	fs.AddFile("/home/user/large", true)
+
+	expectedCount := 0
+	for i := 0; i < 100; i++ {
+		fs.AddFile(fmt.Sprintf("/home/user/large/file%d.txt", i), false)
+		expectedCount++
+		if i%10 == 0 {
+			fs.AddFile(fmt.Sprintf("/home/user/large/subdir%d", i), true)
+			for j := 0; j < 10; j++ {
+				fs.AddFile(fmt.Sprintf("/home/user/large/subdir%d/nested%d.txt", i, j), false)
+				expectedCount++
+			}
+		}
+	}
+
+	g := glob.NewGlob("large/**/*.txt", fs)
+
+	// Act
+	got, err := g.ExpandNames()
+
+	// Assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != expectedCount {
+		t.Errorf("expected %d results, got %d", expectedCount, len(got))
+	}
+}
+
+func TestExpandNames_CaseSensitivity_VariousFlags(t *testing.T) {
+	t.Parallel()
+
 	addExtraFiles := func(fs *MockFilesystem) {
 		if fs.platform == "unix" {
 			fs.AddFile("/home/user/documents/File1.TXT", false)
@@ -612,50 +651,52 @@ func TestGlobCaseInsensitivity(t *testing.T) {
 		{"lower-case insensitive", "documents/*.txt", true, 4, 4},
 	}
 
-	for _, c := range cases {
-		t.Run(c.name+"/unix", func(t *testing.T) {
-			fs := setupLinuxFS()
-			addExtraFiles(fs)
-			glob := glob.NewGlob(c.pattern, fs, glob.WithIgnoreCase(c.ignoreCase))
-			got, err := glob.ExpandNames()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(got) != c.wantUnix {
-				t.Fatalf("want %d got %d", c.wantUnix, len(got))
-			}
-		})
-		t.Run(c.name+"/windows", func(t *testing.T) {
-			fs := setupWindowsFS()
-			addExtraFiles(fs)
-			glob := glob.NewGlob(c.pattern, fs, glob.WithIgnoreCase(c.ignoreCase))
-			got, err := glob.ExpandNames()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(got) != c.wantWin {
-				t.Fatalf("want %d got %d", c.wantWin, len(got))
-			}
+	for _, tc := range cases {
+		tc := tc // capture
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+				// Arrange
+				addExtraFiles(fs)
+				g := glob.NewGlob(tc.pattern, fs, glob.WithIgnoreCase(tc.ignoreCase))
+
+				// Act
+				got, err := g.ExpandNames()
+
+				// Assert
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := tc.wantUnix
+				if fs.platform == "windows" {
+					want = tc.wantWin
+				}
+				if len(got) != want {
+					t.Fatalf("want %d got %d", want, len(got))
+				}
+			})
 		})
 	}
 }
 
-func TestGlobComplexBraceExpansion(t *testing.T) {
-	testCases := []struct {
-		name         string
-		pattern      string
-		expectedUnix []string
-		expectedWin  []string
+func TestExpandNames_ComplexBraceExpansion_ReturnsExpected(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		pattern  string
+		wantUnix []string
+		wantWin  []string
 	}{
 		{
 			name:    "nested braces",
 			pattern: "documents/{file{1,2},report}.{txt,pdf}",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 				"/home/user/documents/report.pdf",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 				"C:/Users/User/Documents/report.pdf",
@@ -664,12 +705,12 @@ func TestGlobComplexBraceExpansion(t *testing.T) {
 		{
 			name:    "cross-separator braces",
 			pattern: "{documents,pictures}/*.{txt,jpg}",
-			expectedUnix: []string{
+			wantUnix: []string{
 				"/home/user/documents/file1.txt",
 				"/home/user/documents/file2.txt",
 				"/home/user/pictures/photo1.jpg",
 			},
-			expectedWin: []string{
+			wantWin: []string{
 				"C:/Users/User/Documents/file1.txt",
 				"C:/Users/User/Documents/file2.txt",
 				"C:/Users/User/Pictures/photo1.jpg",
@@ -677,192 +718,107 @@ func TestGlobComplexBraceExpansion(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range cases {
+		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
-			// Test Unix
-			t.Run("unix", func(t *testing.T) {
-				fs := setupLinuxFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
+			t.Parallel()
+			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+				// Arrange
+				g := glob.NewGlob(tc.pattern, fs)
+
+				// Act
+				got, err := g.ExpandNames()
+
+				// Assert
 				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
+					t.Fatalf("unexpected err: %v", err)
 				}
-
-				expected := normalizePathsForComparison(tc.expectedUnix)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
+				want := tc.wantUnix
+				if fs.platform == "windows" {
+					want = tc.wantWin
 				}
-			})
-
-			// Test Windows
-			t.Run("windows", func(t *testing.T) {
-				fs := setupWindowsFS()
-				glob := glob.NewGlob(tc.pattern, fs)
-				results, err := glob.ExpandNames()
-				if err != nil {
-					t.Fatalf("Unexpected error: %v", err)
-				}
-
-				expected := normalizePathsForComparison(tc.expectedWin)
-				actual := normalizePathsForComparison(results)
-
-				if !reflect.DeepEqual(expected, actual) {
-					t.Errorf("Expected %v, got %v", expected, actual)
-				}
+				assert.Equal(t, want, got, assert.CmpPaths...)
 			})
 		})
 	}
 }
 
-func TestGetFilesPublicAPI(t *testing.T) {
-	// This tests the public API function GetFiles
-	// Note: This will use the real filesystem, so we'll test with a simple pattern
-	results, err := glob.GetFiles("*.nonexistent")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+func TestExpandNames_DotAndDotDot_Patterns(t *testing.T) {
+	t.Parallel()
 
-	// Should return empty slice for non-matching pattern
-	if len(results) != 0 {
-		t.Errorf("Expected empty results for non-matching pattern, got %d results", len(results))
-	}
-
-	// Test empty pattern
-	results, err = glob.GetFiles("")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-
-	if len(results) != 0 {
-		t.Errorf("Expected empty results for empty pattern, got %d results", len(results))
-	}
-}
-
-func BenchmarkGlobExpansion(b *testing.B) {
-	fs := setupLinuxFS()
-	glob := glob.NewGlob("documents/**/*.txt", fs)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := glob.ExpandNames()
-		if err != nil {
-			b.Fatalf("Unexpected error: %v", err)
-		}
-	}
-}
-
-// Test error handling
-func TestErrorHandling(t *testing.T) {
-	t.Run("filesystem_errors", func(t *testing.T) {
-		// Create a mock filesystem that returns errors
-		fs := &MockFilesystem{
-			files:     make(map[string]MockFileInfo),
-			dirs:      make(map[string][]MockDirEntry),
-			cwd:       "/",
-			platform:  "unix",
-			separator: "/",
-		}
-
-		glob := glob.NewGlob("documents/*.txt", fs)
-		results, err := glob.ExpandNames()
-
-		// Should not return error, but empty results
-		if err != nil {
-			t.Errorf("Expected no error, got %v", err)
-		}
-
-		if len(results) != 0 {
-			t.Errorf("Expected empty results, got %d", len(results))
-		}
-	})
-
-	t.Run("malformed_patterns", func(t *testing.T) {
-		fs := setupLinuxFS()
-
-		malformedPatterns := []string{
-			"documents/file[12.txt",  // Unterminated character class
-			"documents/{file1,file2", // Unbalanced braces
-		}
-
-		for _, pattern := range malformedPatterns {
-			glob := glob.NewGlob(pattern, fs, glob.WithIgnoreCase(true))
-			_, err := glob.ExpandNames()
-			// The SUT does not return an error but fails gracefully.
-			if err != nil {
-				t.Errorf("Did not expect an error for malformed pattern %q, but got one: %v", pattern, err)
-			}
-		}
-	})
-}
-
-// Test special directory handling
-func TestSpecialDirectories(t *testing.T) {
 	t.Run("current_directory", func(t *testing.T) {
-		fs := setupLinuxFS()
-		// Add current directory entries
-		fs.AddFile("/home/user/.", true)
-		fs.AddFile("/home/user/..", true)
+		t.Parallel()
+		forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+			// Arrange
+			g := glob.NewGlob(".", fs)
 
-		glob := glob.NewGlob(".", fs)
-		results, err := glob.ExpandNames()
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
+			// Act
+			got, err := g.ExpandNames()
 
-		if len(results) == 0 {
-			t.Error("Expected results for current directory pattern")
-		}
+			// Assert
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			expectedCwd := "/home/user"
+			if fs.platform == "windows" {
+				expectedCwd = "C:/Users/User"
+			}
+			assert.Equal(t, []string{expectedCwd}, got, assert.CmpPaths...)
+		})
 	})
 
 	t.Run("parent_directory", func(t *testing.T) {
-		fs := setupLinuxFS()
-		fs.AddFile("/home/user/..", true)
+		t.Parallel()
+		forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
+			// Arrange
+			g := glob.NewGlob("..", fs)
 
-		glob := glob.NewGlob("..", fs)
-		results, err := glob.ExpandNames()
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
+			// Act
+			got, err := g.ExpandNames()
 
-		if len(results) == 0 {
-			t.Error("Expected results for parent directory pattern")
-		}
+			// Assert
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			expectedParent := "/home"
+			if fs.platform == "windows" {
+				expectedParent = "C:/Users"
+			}
+			assert.Equal(t, []string{expectedParent}, got, assert.CmpPaths...)
+		})
 	})
 }
 
-// Test with very large directory structures
-func TestLargeDirectoryStructure(t *testing.T) {
-	fs := NewMockFilesystem("unix")
-	fs.SetCwd("/home/user")
+func TestGetFilesPublicAPI(t *testing.T) {
+	t.Parallel()
 
-	// Create a large directory structure
-	fs.AddFile("/", true)
-	fs.AddFile("/home", true)
-	fs.AddFile("/home/user", true)
-	fs.AddFile("/home/user/large", true)
+	// Arrange
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	os.Chdir(dir)
 
-	// Add many files
-	for i := 0; i < 100; i++ {
-		fs.AddFile(fmt.Sprintf("/home/user/large/file%d.txt", i), false)
-		if i%10 == 0 {
-			fs.AddFile(fmt.Sprintf("/home/user/large/subdir%d", i), true)
-			for j := 0; j < 10; j++ {
-				fs.AddFile(fmt.Sprintf("/home/user/large/subdir%d/nested%d.txt", i, j), false)
-			}
-		}
-	}
+	// Act
+	results, err := glob.GetFiles("*.nonexistent")
 
-	glob := glob.NewGlob("large/**/*.txt", fs)
-	results, err := glob.ExpandNames()
+	// Assert
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results for non-matching pattern, got %d results", len(results))
 	}
 
-	// Should find all txt files
-	expectedCount := 100 + 10*10 // 100 direct files + 10 subdirs * 10 files each
-	if len(results) != expectedCount {
-		t.Errorf("Expected %d results, got %d", expectedCount, len(results))
+	// Act
+	results, err = glob.GetFiles("")
+
+	// Assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results for empty pattern, got %d results", len(results))
 	}
 }

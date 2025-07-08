@@ -27,11 +27,20 @@ type MockParserConfig struct {
 	TestSettings *settings.Settings
 }
 
-func (mpc *MockParserConfig) SourceDirectories() []string        { return []string{} }
-func (mpc *MockParserConfig) AssemblyFilters() filtering.IFilter { f, _ := filtering.NewDefaultFilter(nil); return f }
-func (mpc *MockParserConfig) ClassFilters() filtering.IFilter    { f, _ := filtering.NewDefaultFilter(nil); return f }
-func (mpc *MockParserConfig) FileFilters() filtering.IFilter     { f, _ := filtering.NewDefaultFilter(nil, true); return f }
-func (mpc *MockParserConfig) Settings() *settings.Settings       { return mpc.TestSettings }
+func (mpc *MockParserConfig) SourceDirectories() []string { return []string{} }
+func (mpc *MockParserConfig) AssemblyFilters() filtering.IFilter {
+	f, _ := filtering.NewDefaultFilter(nil)
+	return f
+}
+func (mpc *MockParserConfig) ClassFilters() filtering.IFilter {
+	f, _ := filtering.NewDefaultFilter(nil)
+	return f
+}
+func (mpc *MockParserConfig) FileFilters() filtering.IFilter {
+	f, _ := filtering.NewDefaultFilter(nil, true)
+	return f
+}
+func (mpc *MockParserConfig) Settings() *settings.Settings { return mpc.TestSettings }
 
 // newTestOrchestrator is a helper to create a pre-configured orchestrator for tests.
 func newTestOrchestrator() *processingOrchestrator {
@@ -41,44 +50,44 @@ func newTestOrchestrator() *processingOrchestrator {
 
 func TestProcessMethodXML_BranchCoverage(t *testing.T) {
 	testCases := []struct {
-		name                 string
+		name                   string
 		supportsBranchCoverage bool // New field to simulate global context
-		methodXML            inputxml.MethodXML
-		expectedBranchRate   *float64 // Pointer to handle nil
+		methodXML              inputxml.MethodXML
+		expectedBranchRate     *float64 // Pointer to handle nil
 	}{
 		{
-			name: "With branch support, method with no branches has 100% coverage",
+			name:                   "With branch support, method with no branches has 100% coverage",
 			supportsBranchCoverage: true,
 			methodXML: inputxml.MethodXML{
-				Name:      "NoBranchMethod",
-				Lines:     inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "false"}}},
+				Name:  "NoBranchMethod",
+				Lines: inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "false"}}},
 			},
 			expectedBranchRate: float64p(1.0), // Should be 100%
 		},
 		{
-			name: "With branch support, method with branches has calculated coverage",
+			name:                   "With branch support, method with branches has calculated coverage",
 			supportsBranchCoverage: true,
 			methodXML: inputxml.MethodXML{
-				Name:      "PartialBranchMethod",
-				Lines:     inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "true", ConditionCoverage: "50% (1/2)"}}},
+				Name:  "PartialBranchMethod",
+				Lines: inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "true", ConditionCoverage: "50% (1/2)"}}},
 			},
 			expectedBranchRate: float64p(0.5), // 50%
 		},
 		{
-			name: "Without branch support, method branch rate is nil (N/A)",
+			name:                   "Without branch support, method branch rate is nil (N/A)",
 			supportsBranchCoverage: false,
 			methodXML: inputxml.MethodXML{
-				Name:      "NoBranchSupportMethod",
-				Lines:     inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "false"}}},
+				Name:  "NoBranchSupportMethod",
+				Lines: inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "false"}}},
 			},
 			expectedBranchRate: nil, // Should be N/A
 		},
 		{
-			name: "Without branch support, even a method with branch data has nil rate",
+			name:                   "Without branch support, even a method with branch data has nil rate",
 			supportsBranchCoverage: false,
 			methodXML: inputxml.MethodXML{
-				Name:      "BranchDataIgnoredMethod",
-				Lines:     inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "true", ConditionCoverage: "50% (1/2)"}}},
+				Name:  "BranchDataIgnoredMethod",
+				Lines: inputxml.LinesXML{Line: []inputxml.LineXML{{Number: "1", Hits: "1", Branch: "true", ConditionCoverage: "50% (1/2)"}}},
 			},
 			expectedBranchRate: nil, // Branch data is ignored if format doesn't support it
 		},
@@ -121,11 +130,11 @@ func TestProcessLineXML(t *testing.T) {
 	orchestrator := newTestOrchestrator()
 
 	testCases := []struct {
-		name                string
-		input               inputxml.LineXML
-		expectedCovered     int
-		expectedTotal       int
-		expectIsBranchPoint bool
+		name                  string
+		input                 inputxml.LineXML
+		expectedCovered       int
+		expectedTotal         int
+		expectIsBranchPoint   bool
 		expectedBranchDetails []model.BranchCoverageDetail
 	}{
 		{

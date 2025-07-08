@@ -395,7 +395,6 @@ func (b *HtmlReportBuilder) buildSingleMetricRow(
 	return row
 }
 
-
 // buildMetricsTableForClassVM constructs the view model for the metrics table.
 // It collects all methods from all files within the class and sorts them
 // primarily by file path, then by line number, then by short method name.

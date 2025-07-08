@@ -172,25 +172,48 @@ func (g *Glob) Expand() ([]string, error) {
 // tryWindowsCaseFold searches parentDir entries case-insensitively.
 // Returns a slice with the correct-cased path when found, otherwise nil.
 func (g *Glob) tryWindowsCaseFold(absPath string, dirOnly bool) ([]string, error) {
-	parent := g.parentDir(absPath)
-	want := filepath.Base(absPath)
-
-	entries, err := g.FS.ReadDir(parent)
-	if err != nil {
-		return nil, nil // parent unreadable -> give up silently
+	// Clean and split into volume + path segments.
+	clean := filepath.Clean(absPath)
+	vol := ""
+	rest := clean
+	if len(clean) >= 2 && clean[1] == ':' {
+		vol = clean[:2]  // "C:"
+		rest = clean[2:] // everything after the drive
 	}
+	rest = strings.TrimPrefix(rest, `\`)
+	parts := strings.Split(rest, `\`)
 
-	for _, de := range entries {
-		if strings.EqualFold(de.Name(), want) {
-			cand := g.joinPath(parent, de.Name())
-			info, e2 := g.FS.Stat(cand)
-			if e2 == nil && (!dirOnly || info.IsDir()) {
-				return []string{cand}, nil
-			}
-			break
+	// Start at the root directory (e.g. "C:\").
+	cur := vol + `\`
+
+	// Walk every segment and pick the real-cased name.
+	for _, p := range parts {
+		if p == "" {
+			continue // guard against "C:\"
 		}
+		entries, err := g.FS.ReadDir(cur) // list the directory we are in
+		if err != nil {
+			return nil, nil // unreadable -> give up
+		}
+		var matched string
+		for _, de := range entries {
+			if strings.EqualFold(de.Name(), p) { // case-insensitive compare
+				matched = de.Name()
+				break
+			}
+		}
+		if matched == "" {
+			return nil, nil // path element not found
+		}
+		cur = g.joinPath(cur, matched) // advance with correct case
 	}
-	return nil, nil
+
+	// We have rebuilt the canonical-cased path in cur.
+	info, err := g.FS.Stat(cur)
+	if err != nil || (dirOnly && !info.IsDir()) {
+		return nil, nil
+	}
+	return []string{cur}, nil
 }
 
 // createRegexOrString compiles a glob pattern segment into a RegexOrString instance.

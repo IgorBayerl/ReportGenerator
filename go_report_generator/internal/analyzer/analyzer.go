@@ -10,13 +10,12 @@ import (
 )
 
 type MergerConfig interface {
-    // Let's analyze what it actually needs. Looking at your code,
-    // it uses SourceDirectories(). Let's assume it might also need filters.
-    // If it needs nothing, the interface would be empty or the parameter could be removed.
-    SourceDirectories() []string
-    AssemblyFilters() filtering.IFilter 
+	// Let's analyze what it actually needs. Looking at your code,
+	// it uses SourceDirectories(). Let's assume it might also need filters.
+	// If it needs nothing, the interface would be empty or the parameter could be removed.
+	SourceDirectories() []string
+	AssemblyFilters() filtering.IFilter
 }
-
 
 // MergeParserResults takes multiple ParserResult objects (potentially from different files
 // or even different parser types) and merges them into a single, unified model.SummaryResult.

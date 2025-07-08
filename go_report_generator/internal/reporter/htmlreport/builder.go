@@ -131,7 +131,7 @@ func (b *HtmlReportBuilder) initializeBuilderProperties(report *model.SummaryRes
 	b.reportTimestamp = report.Timestamp
 	b.tag = reportConfig.Tag()
 	b.branchCoverageAvailable = report.BranchesValid != nil && *report.BranchesValid > 0
-	b.methodCoverageAvailable = true 
+	b.methodCoverageAvailable = true
 	b.maximumDecimalPlacesForCoverageQuotas = settings.MaximumDecimalPlacesForCoverageQuotas
 	b.maximumDecimalPlacesForPercentageDisplay = settings.MaximumDecimalPlacesForPercentageDisplay
 	b.translations = GetTranslations()
