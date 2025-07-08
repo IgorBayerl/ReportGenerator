@@ -60,7 +60,6 @@ func Equal[T any](t *testing.T, want, got T, opts ...cmp.Option) {
 //
 //	foo, err := DoSomething()
 //	assert.NoError(t, err)
-//
 func NoError(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
