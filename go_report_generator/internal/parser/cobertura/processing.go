@@ -827,7 +827,6 @@ func (o *processingOrchestrator) mergeBranches(existing, new []model.BranchCover
 	return existing
 }
 
-// findNamedGroup safely retrieves a captured group's value from a regex match slice.
 func findNamedGroup(re *regexp.Regexp, match []string, groupName string) string {
 	for i, name := range re.SubexpNames() {
 		if i > 0 && i < len(match) && name == groupName {
