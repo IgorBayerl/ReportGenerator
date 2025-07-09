@@ -40,10 +40,10 @@ type cliFlags struct {
 	rhClassFilters    *string
 
 	// logging
-	verbose    *bool
-	verbosity  *string
-	logFile    *string
-	logFormat  *string
+	verbose   *bool
+	verbosity *string
+	logFile   *string
+	logFormat *string
 }
 
 func parseFlags() (*cliFlags, error) {
@@ -71,7 +71,6 @@ func parseFlags() (*cliFlags, error) {
 	flag.Parse()
 	return f, nil
 }
-
 
 func buildLogger(f *cliFlags) (logging.VerbosityLevel, io.Closer, error) {
 	verbosityStr := strings.TrimSpace(*f.verbosity)

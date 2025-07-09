@@ -1,8 +1,8 @@
-package inputxml
+package cobertura
 
 import "encoding/xml"
 
-// CoberturaRoot represents the root <coverage> element of a Cobertura XML file.
+// <coverage>
 type CoberturaRoot struct {
 	XMLName         xml.Name `xml:"coverage"`
 	LineRate        string   `xml:"line-rate,attr"`
@@ -18,17 +18,17 @@ type CoberturaRoot struct {
 	Packages        Packages `xml:"packages"`
 }
 
-// Sources represents the <sources> element.
+// <sources>
 type Sources struct {
 	Source []string `xml:"source"`
 }
 
-// Packages represents the <packages> element.
+// <packages>
 type Packages struct {
 	Package []PackageXML `xml:"package"`
 }
 
-// PackageXML represents a <package> element.
+// <package>
 type PackageXML struct {
 	Name       string     `xml:"name,attr"`
 	LineRate   string     `xml:"line-rate,attr"`
@@ -37,12 +37,12 @@ type PackageXML struct {
 	Classes    ClassesXML `xml:"classes"`
 }
 
-// ClassesXML represents the <classes> element.
+// <classes>
 type ClassesXML struct {
 	Class []ClassXML `xml:"class"`
 }
 
-// ClassXML represents a <class> element.
+// <class>
 type ClassXML struct {
 	Name       string     `xml:"name,attr"`
 	Filename   string     `xml:"filename,attr"`
@@ -53,12 +53,12 @@ type ClassXML struct {
 	Lines      LinesXML   `xml:"lines"`
 }
 
-// MethodsXML represents the <methods> element.
+// <methods>
 type MethodsXML struct {
 	Method []MethodXML `xml:"method"`
 }
 
-// MethodXML represents a <method> element.
+// <method>
 type MethodXML struct {
 	Name       string   `xml:"name,attr"`
 	Signature  string   `xml:"signature,attr"`
@@ -68,28 +68,28 @@ type MethodXML struct {
 	Lines      LinesXML `xml:"lines"` // Lines specific to this method
 }
 
-// LinesXML represents the <lines> element.
+// <lines>
 type LinesXML struct {
 	Line []LineXML `xml:"line"`
 }
 
-// ConditionXML represents a <condition> element within <conditions>.
-type ConditionXML struct {
-	Number   string `xml:"number,attr"`
-	Type     string `xml:"type,attr"`
-	Coverage string `xml:"coverage,attr"`
-}
-
-// ConditionsXML represents the <conditions> element.
-type ConditionsXML struct {
-	Condition []ConditionXML `xml:"condition"`
-}
-
-// LineXML represents a <line> element.
+// <line>
 type LineXML struct {
 	Number            string        `xml:"number,attr"`
 	Hits              string        `xml:"hits,attr"`
 	Branch            string        `xml:"branch,attr"` // "true" or "false"
 	ConditionCoverage string        `xml:"condition-coverage,attr"`
 	Conditions        ConditionsXML `xml:"conditions"`
+}
+
+// <condition>
+type ConditionXML struct {
+	Number   string `xml:"number,attr"`
+	Type     string `xml:"type,attr"`
+	Coverage string `xml:"coverage,attr"`
+}
+
+// <conditions>
+type ConditionsXML struct {
+	Condition []ConditionXML `xml:"condition"`
 }

@@ -312,7 +312,6 @@ func TestExpandNames_BasicPatterns_ReturnExpected(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
@@ -366,7 +365,6 @@ func TestExpandNames_AbsolutePaths_CorrectPerPlatform(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
@@ -440,7 +438,6 @@ func TestExpandNames_RecursivePatterns_ReturnExpected(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
@@ -482,7 +479,6 @@ func TestExpandNames_InvalidGlob_ReturnsError(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
@@ -538,7 +534,6 @@ func TestExpandNames_NonGlobInputs_ReturnsPathOrEmpty(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
@@ -652,7 +647,6 @@ func TestExpandNames_CaseSensitivity_VariousFlags(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {
@@ -719,7 +713,6 @@ func TestExpandNames_ComplexBraceExpansion_ReturnsExpected(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			forPlatforms(t, func(t *testing.T, fs *MockFilesystem) {

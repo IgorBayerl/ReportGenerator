@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
@@ -26,36 +25,28 @@ type CoberturaParser struct {
 // using the real filesystem.
 type DefaultFileReader struct{}
 
-// ReadFile implements the FileReader interface for production.
 func (dfr *DefaultFileReader) ReadFile(path string) ([]string, error) {
 	return filereader.ReadLinesInFile(path)
 }
 
-// CountLines implements the FileReader interface for production.
 func (dfr *DefaultFileReader) CountLines(path string) (int, error) {
 	return filereader.CountLinesInFile(path)
 }
 
-// NewCoberturaParser creates a new CoberturaParser with the given FileReader.
-// This constructor is designed for dependency injection.
 func NewCoberturaParser(fileReader FileReader) parser.IParser {
 	return &CoberturaParser{
 		fileReader: fileReader,
 	}
 }
 
-// init registers the CoberturaParser with the central parser factory.
-// It uses the DefaultFileReader for production use.
 func init() {
 	parser.RegisterParser(NewCoberturaParser(&DefaultFileReader{}))
 }
 
-// Name returns the name of the parser.
 func (cp *CoberturaParser) Name() string {
 	return "Cobertura"
 }
 
-// SupportsFile checks if the given file is likely a Cobertura XML report.
 func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 	if !strings.HasSuffix(strings.ToLower(filePath), ".xml") {
 		return false
@@ -81,7 +72,6 @@ func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 	return false
 }
 
-// Parse processes the Cobertura XML file and transforms it into a common ParserResult.
 func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
 	rawReport, sourceDirsFromXML, err := cp.loadAndUnmarshalCoberturaXML(filePath)
 	if err != nil {
@@ -103,12 +93,14 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 	return &parser.ParserResult{
 		Assemblies:             assemblies,
 		SourceDirectories:      sourceDirsFromXML,
-		SupportsBranchCoverage: true, // This parser always supports it
+		SupportsBranchCoverage: true, // FIXME: This parser not always supports it
 		ParserName:             cp.Name(),
 		MinimumTimeStamp:       timestamp,
 		MaximumTimeStamp:       timestamp,
 	}, nil
 }
+
+// ------
 
 // getEffectiveSourceDirs combines source directories from the configuration (CLI)
 // and from the XML file's <sources> tag to create a comprehensive list of search paths.
@@ -160,7 +152,7 @@ func (cp *CoberturaParser) getReportTimestamp(rawTimestamp string) *time.Time {
 	return nil
 }
 
-func (cp *CoberturaParser) loadAndUnmarshalCoberturaXML(path string) (*inputxml.CoberturaRoot, []string, error) {
+func (cp *CoberturaParser) loadAndUnmarshalCoberturaXML(path string) (*CoberturaRoot, []string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open file: %w", err)
@@ -172,7 +164,7 @@ func (cp *CoberturaParser) loadAndUnmarshalCoberturaXML(path string) (*inputxml.
 		return nil, nil, fmt.Errorf("read file: %w", err)
 	}
 
-	var rawReport inputxml.CoberturaRoot
+	var rawReport CoberturaRoot
 	if err := xml.Unmarshal(bytes, &rawReport); err != nil {
 		return nil, nil, fmt.Errorf("unmarshal xml: %w", err)
 	}

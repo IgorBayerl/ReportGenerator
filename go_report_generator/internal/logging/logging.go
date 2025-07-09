@@ -66,12 +66,11 @@ func ParseVerbosity(s string) (VerbosityLevel, error) {
 // Config + Flag wiring
 
 type Config struct {
-	Verbosity VerbosityLevel // default Info
-	File      string         // "" = console only
-	Format    string         // "text" (default) | "json"
-	FS filesystem.Filesystem // if nil, uses filesystem.DefaultFS{}
+	Verbosity VerbosityLevel        // default Info
+	File      string                // "" = console only
+	Format    string                // "text" (default) | "json"
+	FS        filesystem.Filesystem // if nil, uses filesystem.DefaultFS{}
 }
-
 
 func Init(cfg *Config) (io.Closer, error) {
 	if cfg == nil {

@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/inputxml"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
@@ -95,7 +94,7 @@ func newProcessingOrchestrator(
 }
 
 // processPackages is the entry point for the orchestrator.
-func (o *processingOrchestrator) processPackages(packages []inputxml.PackageXML) ([]model.Assembly, error) {
+func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model.Assembly, error) {
 	var parsedAssemblies []model.Assembly
 	for _, pkgXML := range packages {
 		assembly, err := o.processPackage(pkgXML)
@@ -110,8 +109,8 @@ func (o *processingOrchestrator) processPackages(packages []inputxml.PackageXML)
 	return parsedAssemblies, nil
 }
 
-// processPackage transforms a single inputxml.PackageXML to a model.Assembly.
-func (o *processingOrchestrator) processPackage(pkgXML inputxml.PackageXML) (*model.Assembly, error) {
+// processPackage transforms a single PackageXML to a model.Assembly.
+func (o *processingOrchestrator) processPackage(pkgXML PackageXML) (*model.Assembly, error) {
 	if !o.config.AssemblyFilters().IsElementIncludedInReport(pkgXML.Name) {
 		return nil, nil
 	}
@@ -144,7 +143,7 @@ func (o *processingOrchestrator) processPackage(pkgXML inputxml.PackageXML) (*mo
 }
 
 // processClassGroup processes all XML fragments for a single logical class.
-func (o *processingOrchestrator) processClassGroup(classXMLs []inputxml.ClassXML) (*model.Class, error) {
+func (o *processingOrchestrator) processClassGroup(classXMLs []ClassXML) (*model.Class, error) {
 	if len(classXMLs) == 0 {
 		return nil, nil
 	}
@@ -184,7 +183,7 @@ func (o *processingOrchestrator) processClassGroup(classXMLs []inputxml.ClassXML
 }
 
 // processFileForClass processes all XML fragments associated with a single source file.
-func (o *processingOrchestrator) processFileForClass(filePath, logicalClassName string, fragments []inputxml.ClassXML) (*model.CodeFile, []model.Method, error) {
+func (o *processingOrchestrator) processFileForClass(filePath, logicalClassName string, fragments []ClassXML) (*model.CodeFile, []model.Method, error) {
 	resolvedPath, err := utils.FindFileInSourceDirs(filePath, o.sourceDirs)
 	if err != nil {
 		slog.Warn("Source file not found, line content will be missing.", "file", filePath, "class", logicalClassName)
@@ -223,12 +222,12 @@ func (o *processingOrchestrator) processFileForClass(filePath, logicalClassName 
 }
 
 // mergeLineAndBranchData combines coverage data from multiple XML fragments for a single file.
-func (o *processingOrchestrator) mergeLineAndBranchData(fragments []inputxml.ClassXML, maxLineNum int) (map[int]int, map[int][]model.BranchCoverageDetail) {
+func (o *processingOrchestrator) mergeLineAndBranchData(fragments []ClassXML, maxLineNum int) (map[int]int, map[int][]model.BranchCoverageDetail) {
 	lineHits := make(map[int]int)
 	branchDetails := make(map[int][]model.BranchCoverageDetail)
 
 	for _, fragment := range fragments {
-		allLines := make([]inputxml.LineXML, len(fragment.Lines.Line))
+		allLines := make([]LineXML, len(fragment.Lines.Line))
 		copy(allLines, fragment.Lines.Line)
 		for _, method := range fragment.Methods.Method {
 			allLines = append(allLines, method.Lines.Line...)
@@ -261,7 +260,7 @@ func (o *processingOrchestrator) mergeLineAndBranchData(fragments []inputxml.Cla
 }
 
 // processMethodsForFile extracts and processes all methods from the given XML fragments.
-func (o *processingOrchestrator) processMethodsForFile(fragments []inputxml.ClassXML, sourceLines []string) ([]model.Method, []model.CodeElement, error) {
+func (o *processingOrchestrator) processMethodsForFile(fragments []ClassXML, sourceLines []string) ([]model.Method, []model.CodeElement, error) {
 	var allMethods []model.Method
 	var allCodeElements []model.CodeElement
 
@@ -334,7 +333,7 @@ func (o *processingOrchestrator) assembleLinesForFile(maxLineNum int, sourceLine
 }
 
 // processMethodXML transforms a single method XML element into a rich model.Method object.
-func (o *processingOrchestrator) processMethodXML(methodXML inputxml.MethodXML, sourceLines []string, classNameFromXML string) (*model.Method, error) {
+func (o *processingOrchestrator) processMethodXML(methodXML MethodXML, sourceLines []string, classNameFromXML string) (*model.Method, error) {
 	fullNameFromXML := methodXML.Name + methodXML.Signature
 
 	extractedFullNameForDisplay := o.extractMethodName(fullNameFromXML, classNameFromXML)
@@ -356,7 +355,7 @@ func (o *processingOrchestrator) processMethodXML(methodXML inputxml.MethodXML, 
 }
 
 // processMethodLines processes the <line> elements within a <method> to determine line/branch rates and line ranges.
-func (o *processingOrchestrator) processMethodLines(methodXML inputxml.MethodXML, method *model.Method, sourceLines []string) {
+func (o *processingOrchestrator) processMethodLines(methodXML MethodXML, method *model.Method, sourceLines []string) {
 	minLine, maxLine := math.MaxInt32, 0
 	var methodLinesCovered, methodLinesValid int
 	var methodBranchesCovered, methodBranchesValid int
@@ -411,7 +410,7 @@ func (o *processingOrchestrator) processMethodLines(methodXML inputxml.MethodXML
 }
 
 // processLineXML transforms a single line XML element into a rich model.Line object.
-func (o *processingOrchestrator) processLineXML(lineXML inputxml.LineXML) (model.Line, fileProcessingMetrics) {
+func (o *processingOrchestrator) processLineXML(lineXML LineXML) (model.Line, fileProcessingMetrics) {
 	metrics := fileProcessingMetrics{}
 	lineNumber, _ := strconv.Atoi(lineXML.Number)
 
@@ -629,8 +628,8 @@ func (o *processingOrchestrator) isFilteredRawClassName(rawName string) bool {
 	return false
 }
 
-func (o *processingOrchestrator) groupClassesByLogicalName(classes []inputxml.ClassXML) map[string][]inputxml.ClassXML {
-	grouped := make(map[string][]inputxml.ClassXML)
+func (o *processingOrchestrator) groupClassesByLogicalName(classes []ClassXML) map[string][]ClassXML {
+	grouped := make(map[string][]ClassXML)
 	for _, classXML := range classes {
 		logicalName := o.logicalClassName(classXML.Name)
 		grouped[logicalName] = append(grouped[logicalName], classXML)
@@ -638,8 +637,8 @@ func (o *processingOrchestrator) groupClassesByLogicalName(classes []inputxml.Cl
 	return grouped
 }
 
-func (o *processingOrchestrator) groupClassFragmentsByFile(classXMLs []inputxml.ClassXML) map[string][]inputxml.ClassXML {
-	grouped := make(map[string][]inputxml.ClassXML)
+func (o *processingOrchestrator) groupClassFragmentsByFile(classXMLs []ClassXML) map[string][]ClassXML {
+	grouped := make(map[string][]ClassXML)
 	for _, classXML := range classXMLs {
 		if classXML.Filename == "" || !o.config.FileFilters().IsElementIncludedInReport(classXML.Filename) {
 			continue
@@ -763,7 +762,7 @@ func (o *processingOrchestrator) getTotalLines(path string, sourceLines []string
 	return 0
 }
 
-func getMaxLineNumber(fragments []inputxml.ClassXML) int {
+func getMaxLineNumber(fragments []ClassXML) int {
 	maxLine := 0
 	for _, fragment := range fragments {
 		allLines := fragment.Lines.Line
