@@ -1,7 +1,6 @@
 // Package glob provides functionality for finding files and directories
-// by matching their path names against a pattern. It is a port of
-// C#'s Glob.cs (from a project similar to ReportGenerator or its dependencies),
-// aiming to support similar globbing features including:
+// by matching their path names against a pattern.
+// Aim to support:
 //   - `?`: Matches any single character in a file or directory name.
 //   - `*`: Matches zero or more characters in a file or directory name.
 //   - `**`: Matches zero or more recursive directories.
@@ -12,8 +11,8 @@
 package glob
 
 import (
-	"fmt"      // Keep fmt for fmt.Errorf and fmt.Sprintf
-	"log/slog" // Add slog
+	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -43,8 +42,6 @@ var (
 	cacheMutex = &sync.Mutex{}
 )
 
-// RegexOrString holds either a compiled regex for glob matching or a literal string pattern
-// if the glob segment contained no wildcards.
 type RegexOrString struct {
 	// CompiledRegex is the compiled regular expression if the pattern segment contains wildcards.
 	CompiledRegex *regexp.Regexp
@@ -78,7 +75,6 @@ type Glob struct {
 	platform        string
 }
 
-// joinPath joins using the separator that belongs to g.platform
 func (g *Glob) joinPath(elem1, elem2 string) string {
 	if g.platform == "windows" {
 		return filepath.Join(elem1, elem2)
@@ -86,7 +82,6 @@ func (g *Glob) joinPath(elem1, elem2 string) string {
 	return path.Join(elem1, elem2) // always “/”
 }
 
-// parentDir returns the directory portion using the right rules
 func (g *Glob) parentDir(p string) string {
 	if g.platform == "windows" {
 		return filepath.Dir(p)
@@ -95,8 +90,7 @@ func (g *Glob) parentDir(p string) string {
 }
 
 // absForPlatform turns a possibly-relative path into an absolute one
-// **without** mixing host-OS separators (§ tests run on Windows while we
-// emulate a *nix filesystem).
+// without mixing host-OS separators.
 func (g *Glob) absForPlatform(p string) (string, error) {
 	if g.isAbsolutePath(p) {
 		return g.normalizePathForFS(p), nil
@@ -109,14 +103,12 @@ func (g *Glob) absForPlatform(p string) (string, error) {
 	if g.platform == "windows" {
 		return filepath.Join(cwd, g.normalizePathForFS(p)), nil
 	}
-	// unix – use the slash variant only
+	// unix use the slash variant only
 	return path.Clean(path.Join(g.normalizePathForPattern(cwd), p)), nil
 }
 
-// GlobOption configures a Glob at construction time.
 type GlobOption func(*Glob)
 
-// WithIgnoreCase sets the case-insensitive flag.
 func WithIgnoreCase(v bool) GlobOption { return func(g *Glob) { g.IgnoreCase = v } }
 
 func NewGlob(pattern string, fs filesystem.Filesystem, opts ...GlobOption) *Glob {
@@ -169,10 +161,7 @@ func (g *Glob) Expand() ([]string, error) {
 	return res, err
 }
 
-// tryWindowsCaseFold searches parentDir entries case-insensitively.
-// Returns a slice with the correct-cased path when found, otherwise nil.
 func (g *Glob) tryWindowsCaseFold(absPath string, dirOnly bool) ([]string, error) {
-	// Clean and split into volume + path segments.
 	clean := filepath.Clean(absPath)
 	vol := ""
 	rest := clean
@@ -208,7 +197,7 @@ func (g *Glob) tryWindowsCaseFold(absPath string, dirOnly bool) ([]string, error
 		cur = g.joinPath(cur, matched) // advance with correct case
 	}
 
-	// We have rebuilt the canonical-cased path in cur.
+	// We have rebuilt the canonical cased path in cur.
 	info, err := g.FS.Stat(cur)
 	if err != nil || (dirOnly && !info.IsDir()) {
 		return nil, nil
@@ -271,7 +260,6 @@ func (g *Glob) createRegexOrString(patternSegment string) (*RegexOrString, error
 	return ros, nil
 }
 
-// isAbsolutePath checks if a path is absolute for the current platform
 func (g *Glob) isAbsolutePath(path string) bool {
 	if g.platform == "windows" {
 		// Windows absolute paths: C:\... or \\... (UNC) or /... (converted from Unix-style)
@@ -283,7 +271,6 @@ func (g *Glob) isAbsolutePath(path string) bool {
 	return strings.HasPrefix(path, "/")
 }
 
-// normalizePathForFS converts a path to the format expected by the filesystem
 func (g *Glob) normalizePathForFS(p string) string {
 	if g.platform == "windows" {
 		return strings.ReplaceAll(p, "/", "\\")
@@ -488,7 +475,6 @@ func (g *Glob) processPathSegment(parentPattern, childPattern string, dirOnly bo
 }
 
 // globToRegexPattern converts a glob pattern segment to a Go regular expression string.
-// This is used by createRegexOrString.
 func globToRegexPattern(globSegment string, ignoreCase bool) (string, error) {
 	var regex strings.Builder
 	if ignoreCase {
@@ -678,7 +664,7 @@ func (g *Glob) getRecursiveDirectoriesAndFiles(root string, dirOnly bool) ([]str
 	return paths, nil
 }
 
-// GetFiles is the public entry point for globbing, analogous to C#'s GlobbingFileSearch.GetFiles.
+// GetFiles is the public entry point for globbing.
 // It takes a glob pattern and returns a slice of absolute paths to matching files and directories.
 // Errors encountered during parts of the expansion (e.g., unreadable directory) are logged as warnings,
 // and the function attempts to return successfully found matches.
