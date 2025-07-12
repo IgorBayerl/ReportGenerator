@@ -16,13 +16,11 @@ import (
 )
 
 // CoberturaParser implements the parser.IParser interface for Cobertura XML reports.
-// It now includes a FileReader dependency to enable testability.
 type CoberturaParser struct {
 	fileReader FileReader // Injected dependency
 }
 
-// DefaultFileReader is the production implementation of the FileReader interface,
-// using the real filesystem.
+// DefaultFileReader is the production implementation of the FileReader interface.
 type DefaultFileReader struct{}
 
 func (dfr *DefaultFileReader) ReadFile(path string) ([]string, error) {
@@ -72,6 +70,9 @@ func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 	return false
 }
 
+// Parse is the main entry point for the Cobertura parser. It unmarshals the XML
+// and delegates the complex processing logic to the processingOrchestrator, which
+// handles per-file language detection and formatting.
 func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
 	rawReport, sourceDirsFromXML, err := cp.loadAndUnmarshalCoberturaXML(filePath)
 	if err != nil {
@@ -80,7 +81,8 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 
 	effectiveSourceDirs := cp.getEffectiveSourceDirs(config, sourceDirsFromXML)
 
-	// Create the orchestrator, passing true for supportsBranchCoverage
+	// The orchestrator is now simpler and does not take a pre-determined formatter.
+	// It will determine the formatter for each file internally.
 	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs)
 
 	assemblies, detectedBranchSupport, err := orchestrator.processPackages(rawReport.Packages.Package)
@@ -100,7 +102,7 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 	}, nil
 }
 
-// ------
+// ------ Helper Functions ------
 
 // getEffectiveSourceDirs combines source directories from the configuration (CLI)
 // and from the XML file's <sources> tag to create a comprehensive list of search paths.
@@ -152,6 +154,7 @@ func (cp *CoberturaParser) getReportTimestamp(rawTimestamp string) *time.Time {
 	return nil
 }
 
+// loadAndUnmarshalCoberturaXML reads and unmarshals the Cobertura XML file.
 func (cp *CoberturaParser) loadAndUnmarshalCoberturaXML(path string) (*CoberturaRoot, []string, error) {
 	f, err := os.Open(path)
 	if err != nil {

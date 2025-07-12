@@ -17,12 +17,18 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/htmlreport"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/textsummary"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
+
+	// Import formatters for side-effect registration
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter/csharp"
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter/default"
+
+	// Import parsers for side-effect registration
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura"
 )
 
 type cliFlags struct {
