@@ -11,7 +11,6 @@ import (
 
 // C#-specific Regexes.
 var (
-	// UPDATED REGEX: This version is more precise. It correctly identifies the class part,
 	// the async method name inside brackets, and the specific "d__<number>/MoveNext()" pattern.
 	compilerGeneratedMethodNameRegex = regexp.MustCompile(`^(?P<ClassName>.+)\+<(?P<CompilerGeneratedName>.+)>d__\d+\/MoveNext\(\)$`)
 
