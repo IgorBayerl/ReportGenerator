@@ -2,6 +2,8 @@ package reportconfig
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
@@ -9,7 +11,6 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
-// ADD THIS MAP HERE. It's unexported as it's an internal detail of this package.
 var supportedReportTypes = map[string]bool{
 	"TextSummary": true,
 	"Html":        true,
@@ -35,6 +36,7 @@ type ReportConfiguration struct {
 	InvalidPatterns               []string
 	VLevelValid                   bool
 	App                           *settings.Settings
+	logr                          *slog.Logger
 }
 
 // All accessor methods remain the same.
@@ -60,6 +62,8 @@ func (rc *ReportConfiguration) License() string                        { return 
 func (rc *ReportConfiguration) InvalidReportFilePatterns() []string    { return rc.InvalidPatterns }
 func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return rc.VLevelValid }
 func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App }
+
+func (rc *ReportConfiguration) Logger() *slog.Logger { return rc.logr }
 
 // --- Functional Options Pattern Implementation ---
 
@@ -91,6 +95,7 @@ func NewReportConfiguration(
 		RiskHotspotClassFilterInst:    defaultClassFilter,
 		PluginsList:                   []string{},
 		InvalidPatterns:               []string{},
+		logr:                          slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})),
 	}
 
 	for _, opt := range opts {
@@ -102,7 +107,14 @@ func NewReportConfiguration(
 	return cfg, nil
 }
 
-// --- Define the Option functions ---
+func WithLogger(logger *slog.Logger) Option {
+	return func(c *ReportConfiguration) error {
+		if logger != nil {
+			c.logr = logger
+		}
+		return nil
+	}
+}
 
 func WithSourceDirectories(dirs []string) Option {
 	return func(c *ReportConfiguration) error {
@@ -118,15 +130,12 @@ func WithHistoryDirectory(dir string) Option {
 	}
 }
 
-// WithReportTypes now includes validation.
 func WithReportTypes(types []string) Option {
 	return func(c *ReportConfiguration) error {
 		if len(types) == 0 {
-			// Do nothing, keep the default
 			return nil
 		}
 
-		// Validate the types
 		var validatedTypes []string
 		for _, t := range types {
 			trimmedType := strings.TrimSpace(t)

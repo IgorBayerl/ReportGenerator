@@ -146,7 +146,7 @@ func resolveAndValidateInputs(logger *slog.Logger, flags *cliFlags) ([]string, [
 	return actualReportFiles, invalidPatterns, nil
 }
 
-func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel, actualReportFiles, invalidPatterns []string) (*reportconfig.ReportConfiguration, error) {
+func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel, actualReportFiles, invalidPatterns []string, logger *slog.Logger) (*reportconfig.ReportConfiguration, error) {
 	reportTypes := strings.Split(*flags.reportTypes, ",")
 	sourceDirsList := strings.Split(*flags.sourceDirs, ",")
 	assemblyFilterStrings := strings.Split(*flags.assemblyFilters, ";")
@@ -156,6 +156,7 @@ func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel
 	rhClassFilterStrings := strings.Split(*flags.rhClassFilters, ";")
 
 	opts := []reportconfig.Option{
+		reportconfig.WithLogger(logger),
 		reportconfig.WithVerbosity(verbosity),
 		reportconfig.WithInvalidPatterns(invalidPatterns),
 		reportconfig.WithTitle(*flags.title),
@@ -283,7 +284,7 @@ func run() error {
 		return err
 	}
 
-	reportConfig, err := createReportConfiguration(flags, verbosity, actualReportFiles, invalidPatterns)
+	reportConfig, err := createReportConfiguration(flags, verbosity, actualReportFiles, invalidPatterns, logger)
 	if err != nil {
 		return err
 	}

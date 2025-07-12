@@ -203,8 +203,8 @@ type ClassViewModelForDetail struct {
 	HistoricCoverages         []AngularHistoricCoverageViewModel `json:"hc,omitempty"`
 	LineCoverageHistory       []float64                          `json:"lch,omitempty"`
 	BranchCoverageHistory     []float64                          `json:"bch,omitempty"`
-	MethodCoverageHistory     []float64                          `json:"mch,omitempty"`     // If you add it
-	FullMethodCoverageHistory []float64                          `json:"mfch,omitempty"`    // If you add it
+	MethodCoverageHistory     []float64                          `json:"mch,omitempty"`
+	FullMethodCoverageHistory []float64                          `json:"mfch,omitempty"`
 	Metrics                   map[string]float64                 `json:"metrics,omitempty"` // Class-level aggregated metrics
 }
 

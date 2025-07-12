@@ -1,37 +1,92 @@
+// Package analyzer provides tools for processing and merging parsed coverage data.
+// It takes results from one or more parsers and combines them into a single,
+// unified summary model, which can then be used by reporters.
 package analyzer
 
 import (
 	"fmt"
+	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser" // For parser.ParserResult
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
 )
 
+// MergerConfig defines the necessary configuration for the merging process.
+// It provides access to source directories, filters, and a logger.
 type MergerConfig interface {
-	// Let's analyze what it actually needs. Looking at your code,
-	// it uses SourceDirectories(). Let's assume it might also need filters.
-	// If it needs nothing, the interface would be empty or the parameter could be removed.
 	SourceDirectories() []string
 	AssemblyFilters() filtering.IFilter
+	Logger() *slog.Logger
 }
 
-// MergeParserResults takes multiple ParserResult objects (potentially from different files
-// or even different parser types) and merges them into a single, unified model.SummaryResult.
-// The config is needed to access global settings or filters if they are applied at merge time
-// (though ideally filters are applied within each parser).
+// MergeParserResults orchestrates the process of merging multiple ParserResult objects
+// into a single, unified model.SummaryResult.
 func MergeParserResults(results []*parser.ParserResult, config MergerConfig) (*model.SummaryResult, error) {
 	if len(results) == 0 {
 		return nil, fmt.Errorf("no parser results to merge")
 	}
 
+	logger := config.Logger()
+	logger.Info("Starting merge process for parser results", "count", len(results))
+
+	// 1. Pick a representative parser name for the report.
+	parserName := pickParserName(results)
+	logger.Debug("Picked parser name", "name", parserName)
+
+	// 2. Find the earliest timestamp among all reports.
+	minTimestamp := earliestTimestamp(results)
+
+	// 3. Create a de-duplicated list of all source directories.
+	sourceDirs := unionSourceDirs(results)
+
+	// 4. Merge all assemblies from all parser results.
+	mergedAssembliesMap := mergeAssemblies(results, logger)
+	logger.Info("Assemblies merged", "count", len(mergedAssembliesMap))
+
+	// Convert map to a sorted slice for consistent output.
+	finalAssemblies := make([]model.Assembly, 0, len(mergedAssembliesMap))
+	for _, asm := range mergedAssembliesMap {
+		finalAssemblies = append(finalAssemblies, *asm)
+	}
+	sort.Slice(finalAssemblies, func(i, j int) bool {
+		return finalAssemblies[i].Name < finalAssemblies[j].Name
+	})
+
+	// 5. Compute the final global statistics from the merged assemblies.
+	linesCovered, linesValid, totalLines, branchesCovered, branchesValid, hasBranchData := computeGlobalStats(mergedAssembliesMap)
+	logger.Debug("Computed global stats", "linesCovered", linesCovered, "linesValid", linesValid, "hasBranchData", hasBranchData)
+
+	// 6. Assemble the final SummaryResult struct.
 	finalSummary := &model.SummaryResult{
-		Assemblies: []model.Assembly{},
-		// Initialize other fields like ParserName, Timestamps later
+		ParserName:   parserName,
+		SourceDirs:   sourceDirs,
+		Assemblies:   finalAssemblies,
+		LinesCovered: linesCovered,
+		LinesValid:   linesValid,
+		TotalLines:   totalLines,
 	}
 
-	// Determine overall parser name
+	if minTimestamp != nil {
+		finalSummary.Timestamp = minTimestamp.Unix()
+	}
+
+	if hasBranchData {
+		finalSummary.BranchesCovered = &branchesCovered
+		finalSummary.BranchesValid = &branchesValid
+	}
+
+	logger.Info("Merge process completed successfully")
+	return finalSummary, nil
+}
+
+// --- Helpers ---
+
+// pickParserName inspects the parser results and returns a single representative name.
+// It returns "Unknown", the single unique name, or "MultiReport" if multiple parsers were used.
+func pickParserName(results []*parser.ParserResult) string {
 	parserNames := make(map[string]struct{})
 	for _, res := range results {
 		if res.ParserName != "" {
@@ -40,56 +95,63 @@ func MergeParserResults(results []*parser.ParserResult, config MergerConfig) (*m
 	}
 	if len(parserNames) == 1 {
 		for name := range parserNames {
-			finalSummary.ParserName = name
-			break
+			return name
 		}
-	} else if len(parserNames) > 1 {
-		finalSummary.ParserName = "MultiReport" // Or concatenate, e.g., "Cobertura, OpenCover"
-	} else {
-		finalSummary.ParserName = "Unknown"
 	}
+	if len(parserNames) > 1 {
+		return "MultiReport"
+	}
+	return "Unknown"
+}
 
-	// Determine overall min/max timestamps
-	var minTs, maxTs *time.Time
+// earliestTimestamp finds and returns the minimum non-nil MinimumTimeStamp from all parser results.
+func earliestTimestamp(results []*parser.ParserResult) *time.Time {
+	var minTs *time.Time
 	for _, res := range results {
 		if res.MinimumTimeStamp != nil {
 			if minTs == nil || res.MinimumTimeStamp.Before(*minTs) {
 				minTs = res.MinimumTimeStamp
 			}
 		}
-		if res.MaximumTimeStamp != nil {
-			if maxTs == nil || res.MaximumTimeStamp.After(*maxTs) {
-				maxTs = res.MaximumTimeStamp
-			}
-		}
 	}
-	if minTs != nil {
-		finalSummary.Timestamp = minTs.Unix() // Or handle range if min/max differ significantly
-	}
+	return minTs
+}
 
-	// Collect all source directories
+// builds and returns a de-duplicated slice of all SourceDirectories from the parser results.
+func unionSourceDirs(results []*parser.ParserResult) []string {
 	allSourceDirsSet := make(map[string]struct{})
 	for _, res := range results {
 		for _, dir := range res.SourceDirectories {
 			allSourceDirsSet[dir] = struct{}{}
 		}
 	}
+	sourceDirs := make([]string, 0, len(allSourceDirsSet))
 	for dir := range allSourceDirsSet {
-		finalSummary.SourceDirs = append(finalSummary.SourceDirs, dir)
+		sourceDirs = append(sourceDirs, dir)
 	}
+	return sourceDirs
+}
 
-	// Merge assemblies
-	mergedAssembliesMap := make(map[string]*model.Assembly)
+// combines assemblies from all parser results into a single map using a deep merge strategy.
+// If an assembly is found in multiple results, its statistics are summed.
+// Its classes are also merged by name, summing their individual statistics and creating a union of their file lists.
+func mergeAssemblies(results []*parser.ParserResult, logger *slog.Logger) map[string]*model.Assembly {
+	// Pre-allocate map capacity, guessing an average of 2 assemblies per result.
+	mergedAssembliesMap := make(map[string]*model.Assembly, len(results)*2)
+
 	for _, res := range results {
 		for _, asmFromParser := range res.Assemblies {
-			asmCopy := asmFromParser // Work with a copy to avoid modifying original parser result data
-			if existingAsm, ok := mergedAssembliesMap[asmCopy.Name]; ok {
-				// Instead of just appending classes, also sum up the simple stats.
-				// This is still not a full deep merge but better than current.
-				existingAsm.LinesCovered += asmCopy.LinesCovered
-				existingAsm.LinesValid += asmCopy.LinesValid // This might overcount if same lines are in both
-				// Consider making LinesValid a calculation based on unique lines after merging.
+			// Work with a copy to avoid modifying the original parser result data.
+			asmCopy := asmFromParser
 
+			if existingAsm, ok := mergedAssembliesMap[asmCopy.Name]; ok {
+				logger.Debug("Merging existing assembly", "name", asmCopy.Name)
+
+				// Merge top-level assembly statistics
+				existingAsm.LinesCovered += asmCopy.LinesCovered
+				existingAsm.LinesValid += asmCopy.LinesValid
+
+				// Merge branch coverage data
 				if asmCopy.BranchesCovered != nil {
 					if existingAsm.BranchesCovered == nil {
 						bc := *asmCopy.BranchesCovered
@@ -103,71 +165,77 @@ func MergeParserResults(results []*parser.ParserResult, config MergerConfig) (*m
 						bv := *asmCopy.BranchesValid
 						existingAsm.BranchesValid = &bv
 					} else {
-						// This logic for TotalBranches/LinesValid needs to be careful
-						// not to double-count if the underlying entities (lines with branches)
-						// are the same but reported in multiple files. A true deep merge
-						// handles this by merging at the line level.
-						// For a simple sum, this might lead to inflated TotalBranches if not careful.
-						// A safer bet if deep merge isn't done is to just use stats from the first file,
-						// which is what it implicitly does now for the assembly stats, and accept undercounting.
-						// OR, ensure the Cobertura files being merged do not have overlapping assembly/class/file definitions.
 						*existingAsm.BranchesValid += *asmCopy.BranchesValid
 					}
 				}
 
-				// TODO: Still need to handle merging of classes, files, lines properly for detailed views.
-				// For now, appending classes will lead to duplicates if the same class is in multiple reports for this assembly.
-				existingAsm.Classes = append(existingAsm.Classes, asmCopy.Classes...)
+				// Deep merge the classes within the assembly
+				// Create a map of the existing classes for efficient lookup.
+				classMap := make(map[string]*model.Class, len(existingAsm.Classes))
+				for i := range existingAsm.Classes {
+					classMap[existingAsm.Classes[i].Name] = &existingAsm.Classes[i]
+				}
+
+				// Iterate through the new classes from the current parser result
+				for _, classFromParser := range asmCopy.Classes {
+					if existingClass, found := classMap[classFromParser.Name]; found {
+						// Class exists: merge its statistics and files
+						existingClass.LinesCovered += classFromParser.LinesCovered
+						existingClass.LinesValid += classFromParser.LinesValid
+
+						// Merge the file list to avoid duplicates
+						// Create a set of existing file paths for quick lookups.
+						filePaths := make(map[string]struct{}, len(existingClass.Files))
+						for _, f := range existingClass.Files {
+							filePaths[f.Path] = struct{}{}
+						}
+
+						// Append only the files that have not been seen before in this class.
+						for _, fileFromParser := range classFromParser.Files {
+							if _, fileExists := filePaths[fileFromParser.Path]; !fileExists {
+								existingClass.Files = append(existingClass.Files, fileFromParser)
+								filePaths[fileFromParser.Path] = struct{}{}
+							}
+						}
+					} else {
+						// Class is new: append it to the existing assembly's class slice
+						existingAsm.Classes = append(existingAsm.Classes, classFromParser)
+						classMap[classFromParser.Name] = &existingAsm.Classes[len(existingAsm.Classes)-1]
+					}
+				}
 			} else {
+				// Assembly is new, so add a copy of it to the map.
+				logger.Debug("Adding new assembly", "name", asmCopy.Name)
 				mergedAssembliesMap[asmCopy.Name] = &asmCopy
 			}
 		}
 	}
+	return mergedAssembliesMap
+}
 
-	// Convert map to slice and re-aggregate stats for merged assemblies
+// computeGlobalStats iterates through the merged assemblies and calculates the final summary statistics in a single pass.
+func computeGlobalStats(mergedAssemblies map[string]*model.Assembly) (linesCovered, linesValid, totalLines, branchesCovered, branchesValid int, hasBranchData bool) {
 	uniqueFilesForGrandTotal := make(map[string]int)
-	for _, asm := range mergedAssembliesMap {
-		// Re-aggregate assembly stats *after* its classes might have been merged from multiple sources
-		// This is a complex step. For now, the stats on `asm` are from its last `ParserResult`.
-		// A true merge would sum up counts from constituent parts and recalculate.
-		// Placeholder for re-aggregation of asm.LinesCovered, asm.LinesValid, etc.
-		// and asm.TotalLines based on unique files within this merged assembly.
-		finalSummary.Assemblies = append(finalSummary.Assemblies, *asm)
-	}
 
-	// Aggregate global stats for finalSummary
-	var globalLinesCovered, globalLinesValid, globalTotalLines int
-	var globalBranchesCovered, globalBranchesValid int
-	hasBranchData := false
+	for _, asm := range mergedAssemblies {
+		linesCovered += asm.LinesCovered
+		linesValid += asm.LinesValid
 
-	for i := range finalSummary.Assemblies {
-		asm := &finalSummary.Assemblies[i] // Operate on the final list
-		globalLinesCovered += asm.LinesCovered
-		globalLinesValid += asm.LinesValid
-		// TotalLines for summary needs to be from unique file paths across *all* assemblies
+		// Calculate total lines from unique files across all assemblies.
 		for _, cls := range asm.Classes {
 			for _, f := range cls.Files {
 				if _, exists := uniqueFilesForGrandTotal[f.Path]; !exists && f.TotalLines > 0 {
 					uniqueFilesForGrandTotal[f.Path] = f.TotalLines
-					globalTotalLines += f.TotalLines
+					totalLines += f.TotalLines
 				}
 			}
 		}
 
 		if asm.BranchesCovered != nil && asm.BranchesValid != nil {
 			hasBranchData = true
-			globalBranchesCovered += *asm.BranchesCovered
-			globalBranchesValid += *asm.BranchesValid
+			branchesCovered += *asm.BranchesCovered
+			branchesValid += *asm.BranchesValid
 		}
 	}
-
-	finalSummary.LinesCovered = globalLinesCovered
-	finalSummary.LinesValid = globalLinesValid
-	finalSummary.TotalLines = globalTotalLines
-	if hasBranchData {
-		finalSummary.BranchesCovered = &globalBranchesCovered
-		finalSummary.BranchesValid = &globalBranchesValid
-	}
-
-	return finalSummary, nil
+	return
 }
