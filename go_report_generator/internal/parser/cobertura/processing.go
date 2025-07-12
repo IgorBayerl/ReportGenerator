@@ -74,7 +74,7 @@ type processingOrchestrator struct {
 	sourceDirs                        []string
 	uniqueFilePathsForGrandTotalLines map[string]int
 	processedAssemblyFiles            map[string]struct{}
-	supportsBranchCoverage            bool
+	detectedBranchCoverage            bool
 }
 
 // newProcessingOrchestrator creates a new orchestrator for processing Cobertura data.
@@ -82,19 +82,18 @@ func newProcessingOrchestrator(
 	fileReader FileReader,
 	config parser.ParserConfig,
 	sourceDirs []string,
-	supportsBranchCoverage bool,
 ) *processingOrchestrator {
 	return &processingOrchestrator{
 		fileReader:                        fileReader,
 		config:                            config,
 		sourceDirs:                        sourceDirs,
 		uniqueFilePathsForGrandTotalLines: make(map[string]int),
-		supportsBranchCoverage:            supportsBranchCoverage,
+		detectedBranchCoverage:            false,
 	}
 }
 
 // processPackages is the entry point for the orchestrator.
-func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model.Assembly, error) {
+func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model.Assembly, bool, error) {
 	var parsedAssemblies []model.Assembly
 	for _, pkgXML := range packages {
 		assembly, err := o.processPackage(pkgXML)
@@ -102,11 +101,11 @@ func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model
 			slog.Warn("Could not process Cobertura package, skipping.", "package", pkgXML.Name, "error", err)
 			continue
 		}
-		if assembly != nil { // A nil assembly means it was filtered out
+		if assembly != nil {
 			parsedAssemblies = append(parsedAssemblies, *assembly)
 		}
 	}
-	return parsedAssemblies, nil
+	return parsedAssemblies, o.detectedBranchCoverage, nil
 }
 
 // processPackage transforms a single PackageXML to a model.Assembly.
@@ -395,7 +394,7 @@ func (o *processingOrchestrator) processMethodLines(methodXML MethodXML, method 
 	}
 
 	// === FINAL CORRECTED BRANCH RATE LOGIC ===
-	if !o.supportsBranchCoverage {
+	if !o.detectedBranchCoverage {
 		// If the entire report format does not support branch coverage, the rate is not applicable.
 		method.BranchRate = nil
 	} else if methodBranchesValid > 0 {
@@ -414,10 +413,16 @@ func (o *processingOrchestrator) processLineXML(lineXML LineXML) (model.Line, fi
 	metrics := fileProcessingMetrics{}
 	lineNumber, _ := strconv.Atoi(lineXML.Number)
 
+	isBranchPoint := strings.EqualFold(lineXML.Branch, "true")
+
+	if isBranchPoint && !o.detectedBranchCoverage {
+		o.detectedBranchCoverage = true
+	}
+
 	line := model.Line{
 		Number:        lineNumber,
 		Hits:          parseInt(lineXML.Hits),
-		IsBranchPoint: strings.EqualFold(lineXML.Branch, "true"),
+		IsBranchPoint: isBranchPoint,
 		Branch:        make([]model.BranchCoverageDetail, 0),
 	}
 

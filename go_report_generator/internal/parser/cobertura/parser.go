@@ -81,9 +81,9 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 	effectiveSourceDirs := cp.getEffectiveSourceDirs(config, sourceDirsFromXML)
 
 	// Create the orchestrator, passing true for supportsBranchCoverage
-	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs, true)
+	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs)
 
-	assemblies, err := orchestrator.processPackages(rawReport.Packages.Package)
+	assemblies, detectedBranchSupport, err := orchestrator.processPackages(rawReport.Packages.Package)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process Cobertura packages: %w", err)
 	}
@@ -93,7 +93,7 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 	return &parser.ParserResult{
 		Assemblies:             assemblies,
 		SourceDirectories:      sourceDirsFromXML,
-		SupportsBranchCoverage: true, // FIXME: This parser not always supports it
+		SupportsBranchCoverage: detectedBranchSupport,
 		ParserName:             cp.Name(),
 		MinimumTimeStamp:       timestamp,
 		MaximumTimeStamp:       timestamp,
