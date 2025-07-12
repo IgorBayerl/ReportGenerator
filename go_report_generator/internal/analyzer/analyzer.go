@@ -32,21 +32,16 @@ func MergeParserResults(results []*parser.ParserResult, config MergerConfig) (*m
 	logger := config.Logger()
 	logger.Info("Starting merge process for parser results", "count", len(results))
 
-	// 1. Pick a representative parser name for the report.
 	parserName := pickParserName(results)
 	logger.Debug("Picked parser name", "name", parserName)
 
-	// 2. Find the earliest timestamp among all reports.
 	minTimestamp := earliestTimestamp(results)
 
-	// 3. Create a de-duplicated list of all source directories.
 	sourceDirs := unionSourceDirs(results)
 
-	// 4. Merge all assemblies from all parser results.
 	mergedAssembliesMap := mergeAssemblies(results, logger)
 	logger.Info("Assemblies merged", "count", len(mergedAssembliesMap))
 
-	// Convert map to a sorted slice for consistent output.
 	finalAssemblies := make([]model.Assembly, 0, len(mergedAssembliesMap))
 	for _, asm := range mergedAssembliesMap {
 		finalAssemblies = append(finalAssemblies, *asm)
@@ -55,11 +50,9 @@ func MergeParserResults(results []*parser.ParserResult, config MergerConfig) (*m
 		return finalAssemblies[i].Name < finalAssemblies[j].Name
 	})
 
-	// 5. Compute the final global statistics from the merged assemblies.
 	linesCovered, linesValid, totalLines, branchesCovered, branchesValid, hasBranchData := computeGlobalStats(mergedAssembliesMap)
 	logger.Debug("Computed global stats", "linesCovered", linesCovered, "linesValid", linesValid, "hasBranchData", hasBranchData)
 
-	// 6. Assemble the final SummaryResult struct.
 	finalSummary := &model.SummaryResult{
 		ParserName:   parserName,
 		SourceDirs:   sourceDirs,
