@@ -3,14 +3,14 @@ package csharp_test
 import (
 	"testing"
 
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter/csharp"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/csharp"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestName(t *testing.T) {
 	// Arrange
-	formatter := csharp.NewCSharpFormatter()
+	formatter := csharp.NewCSharpProcessor()
 
 	// Act
 	name := formatter.Name()
@@ -65,7 +65,7 @@ func TestDetect(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			formatter := csharp.NewCSharpFormatter()
+			formatter := csharp.NewCSharpProcessor()
 
 			// Act
 			result := formatter.Detect(tc.filePath)
@@ -117,7 +117,7 @@ func TestGetLogicalClassName(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			formatter := csharp.NewCSharpFormatter()
+			formatter := csharp.NewCSharpProcessor()
 
 			// Act
 			result := formatter.GetLogicalClassName(tc.rawClassName)
@@ -164,7 +164,7 @@ func TestIsCompilerGeneratedClass(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			formatter := csharp.NewCSharpFormatter()
+			formatter := csharp.NewCSharpProcessor()
 
 			// Act
 			result := formatter.IsCompilerGeneratedClass(&tc.classInput)
@@ -211,7 +211,7 @@ func TestFormatClassName(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			formatter := csharp.NewCSharpFormatter()
+			formatter := csharp.NewCSharpProcessor()
 
 			// Act
 			result := formatter.FormatClassName(&tc.classInput)
@@ -270,7 +270,7 @@ func TestFormatMethodName(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			formatter := csharp.NewCSharpFormatter()
+			formatter := csharp.NewCSharpProcessor()
 
 			// Act
 			result := formatter.FormatMethodName(&tc.methodInput, &tc.classInput)
@@ -317,7 +317,7 @@ func TestCategorizeCodeElement(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			formatter := csharp.NewCSharpFormatter()
+			formatter := csharp.NewCSharpProcessor()
 
 			// Act
 			result := formatter.CategorizeCodeElement(&tc.methodInput)

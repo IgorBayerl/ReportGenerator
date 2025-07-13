@@ -5,51 +5,47 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 )
 
 // C#-specific Regexes.
 var (
-	// the async method name inside brackets, and the specific "d__<number>/MoveNext()" pattern.
 	compilerGeneratedMethodNameRegex = regexp.MustCompile(`^(?P<ClassName>.+)\+<(?P<CompilerGeneratedName>.+)>d__\d+\/MoveNext\(\)$`)
-
-	// This regex correctly handles local functions, including those nested inside generic methods.
-	localFunctionMethodNameRegex = regexp.MustCompile(`^(?:.*>g__)?(?P<NestedMethodName>[^|]+)\|`)
-
-	genericClassRegex        = regexp.MustCompile("^(?P<Name>.+)`(?P<Number>\\d+)$")
-	nestedTypeSeparatorRegex = regexp.MustCompile(`[+/]`)
+	localFunctionMethodNameRegex     = regexp.MustCompile(`^(?:.*>g__)?(?P<NestedMethodName>[^|]+)\|`)
+	genericClassRegex                = regexp.MustCompile("^(?P<Name>.+)`(?P<Number>\\d+)$")
+	nestedTypeSeparatorRegex         = regexp.MustCompile(`[+/]`)
 )
 
-// CSharpFormatter implements the formatter.LanguageFormatter interface for C#.
-type CSharpFormatter struct{}
+// CSharpProcessor implements the language.Processor interface for C#.
+type CSharpProcessor struct{}
 
 func init() {
-	formatter.RegisterFormatter(NewCSharpFormatter())
+	language.RegisterProcessor(NewCSharpProcessor())
 }
 
-func NewCSharpFormatter() formatter.LanguageFormatter {
-	return &CSharpFormatter{}
+func NewCSharpProcessor() language.Processor {
+	return &CSharpProcessor{}
 }
 
-func (f *CSharpFormatter) Name() string {
+func (p *CSharpProcessor) Name() string {
 	return "C#"
 }
 
-// C# or F# source file.
-func (f *CSharpFormatter) Detect(filePath string) bool {
+// Detect checks for C# or F# source files.
+func (p *CSharpProcessor) Detect(filePath string) bool {
 	lowerPath := strings.ToLower(filePath)
 	return strings.HasSuffix(lowerPath, ".cs") || strings.HasSuffix(lowerPath, ".fs")
 }
 
-func (f *CSharpFormatter) GetLogicalClassName(rawClassName string) string {
+func (p *CSharpProcessor) GetLogicalClassName(rawClassName string) string {
 	if i := strings.IndexAny(rawClassName, "/$+"); i != -1 {
 		return rawClassName[:i]
 	}
 	return rawClassName
 }
 
-func (f *CSharpFormatter) FormatClassName(class *model.Class) string {
+func (p *CSharpProcessor) FormatClassName(class *model.Class) string {
 	nameForDisplay := nestedTypeSeparatorRegex.ReplaceAllString(class.Name, ".")
 	match := genericClassRegex.FindStringSubmatch(nameForDisplay)
 	if match == nil {
@@ -78,12 +74,10 @@ func (f *CSharpFormatter) FormatClassName(class *model.Class) string {
 	return baseDisplayName
 }
 
-func (f *CSharpFormatter) FormatMethodName(method *model.Method, class *model.Class) string {
+func (p *CSharpProcessor) FormatMethodName(method *model.Method, class *model.Class) string {
 	methodNamePlusSignature := method.Name + method.Signature
 	combinedNameForContext := class.Name + "/" + methodNamePlusSignature
 
-	// The '|' character is the most reliable indicator of a compiler-generated
-	// local function name. The "g__" is not always present.
 	if strings.Contains(methodNamePlusSignature, "|") {
 		if match := localFunctionMethodNameRegex.FindStringSubmatch(methodNamePlusSignature); match != nil {
 			if nestedName := findNamedGroup(localFunctionMethodNameRegex, match, "NestedMethodName"); nestedName != "" {
@@ -92,7 +86,6 @@ func (f *CSharpFormatter) FormatMethodName(method *model.Method, class *model.Cl
 		}
 	}
 
-	// Handle async/await state machines (e.g., <MyAsyncMethod>d__0.MoveNext())
 	if strings.HasSuffix(methodNamePlusSignature, "MoveNext()") {
 		if match := compilerGeneratedMethodNameRegex.FindStringSubmatch(combinedNameForContext); match != nil {
 			if compilerGenName := findNamedGroup(compilerGeneratedMethodNameRegex, match, "CompilerGeneratedName"); compilerGenName != "" {
@@ -104,14 +97,14 @@ func (f *CSharpFormatter) FormatMethodName(method *model.Method, class *model.Cl
 	return methodNamePlusSignature
 }
 
-func (f *CSharpFormatter) CategorizeCodeElement(method *model.Method) model.CodeElementType {
+func (p *CSharpProcessor) CategorizeCodeElement(method *model.Method) model.CodeElementType {
 	if strings.HasPrefix(method.DisplayName, "get_") || strings.HasPrefix(method.DisplayName, "set_") {
 		return model.PropertyElementType
 	}
 	return model.MethodElementType
 }
 
-func (f *CSharpFormatter) IsCompilerGeneratedClass(class *model.Class) bool {
+func (p *CSharpProcessor) IsCompilerGeneratedClass(class *model.Class) bool {
 	rawName := class.Name
 	if strings.Contains(rawName, "+<>c") || strings.Contains(rawName, "/<>c") || strings.HasPrefix(rawName, "<>c") || strings.Contains(rawName, ">d__") {
 		return true
@@ -119,6 +112,12 @@ func (f *CSharpFormatter) IsCompilerGeneratedClass(class *model.Class) bool {
 	return false
 }
 
+// CalculateCyclomaticComplexity returns an error indicating this feature is not supported for C#.
+func (p *CSharpProcessor) CalculateCyclomaticComplexity(filePath string) ([]model.MethodMetric, error) {
+	return nil, language.ErrNotSupported
+}
+
+// findNamedGroup is a helper function to extract a named group from a regex match.
 func findNamedGroup(re *regexp.Regexp, match []string, groupName string) string {
 	for i, name := range re.SubexpNames() {
 		if i > 0 && i < len(match) && name == groupName {

@@ -23,9 +23,10 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 
-	// Import formatters for side-effect registration
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter/csharp"
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter/default"
+	// Import language utils for side-effect registration
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/csharp"
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/default"
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
 
 	// Import parsers for side-effect registration
 	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura"

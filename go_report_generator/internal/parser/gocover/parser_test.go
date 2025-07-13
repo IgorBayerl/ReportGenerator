@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	// Add blank imports to register the necessary formatters for this test.
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter/default"
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter/golang"
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/default"
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
 )
 
 // MockFileInfo implements fs.FileInfo for testing.

@@ -1,6 +1,7 @@
 package cobertura
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -8,22 +9,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
-// Cobertura-specific Regexes.
-// These regexes are tied to the Cobertura XML format itself, not a specific language.
 var (
-	// Based on: Palmmedia.ReportGenerator.Core.Parser.CoberturaParser.cs
-	// Original C# Regex: private static readonly Regex BranchCoverageRegex = new Regex("\\((?<NumberOfCoveredBranches>\\d+)/(?<NumberOfTotalBranches>\\d+)\\)$", RegexOptions.Compiled);
-	// This regex parses the 'condition-coverage' attribute which is part of the Cobertura standard (e.g., "100% (2/2)").
 	conditionCoverageRegexCobertura = regexp.MustCompile(`\((?P<NumberOfCoveredBranches>\d+)/(?P<NumberOfTotalBranches>\d+)\)$`)
 )
 
-// fileProcessingMetrics holds metrics aggregated during the processing of a single file.
 type fileProcessingMetrics struct {
 	linesCovered    int
 	linesValid      int
@@ -31,9 +26,6 @@ type fileProcessingMetrics struct {
 	branchesValid   int
 }
 
-// processingOrchestrator holds dependencies and state for a single parsing operation.
-// It is responsible for walking the Cobertura XML structure and delegating language-specific
-// interpretation to the correct formatter.
 type processingOrchestrator struct {
 	fileReader                        FileReader
 	config                            parser.ParserConfig
@@ -44,7 +36,6 @@ type processingOrchestrator struct {
 	logger                            *slog.Logger
 }
 
-// newProcessingOrchestrator creates a new orchestrator for processing Cobertura data.
 func newProcessingOrchestrator(
 	fileReader FileReader,
 	config parser.ParserConfig,
@@ -61,7 +52,6 @@ func newProcessingOrchestrator(
 	}
 }
 
-// processPackages is the entry point for the orchestrator.
 func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model.Assembly, bool, error) {
 	var parsedAssemblies []model.Assembly
 	for _, pkgXML := range packages {
@@ -77,7 +67,6 @@ func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model
 	return parsedAssemblies, o.detectedBranchCoverage, nil
 }
 
-// processPackage transforms a single PackageXML to a model.Assembly.
 func (o *processingOrchestrator) processPackage(pkgXML PackageXML) (*model.Assembly, error) {
 	if !o.config.AssemblyFilters().IsElementIncludedInReport(pkgXML.Name) {
 		o.logger.Debug("Skipping assembly excluded by filter", "assembly", pkgXML.Name)
@@ -90,13 +79,11 @@ func (o *processingOrchestrator) processPackage(pkgXML PackageXML) (*model.Assem
 	}
 	o.processedAssemblyFiles = make(map[string]struct{})
 
-	// Group class XML fragments by their logical name, determined by the appropriate language formatter.
 	classesXMLGrouped := o.groupClassesByLogicalName(pkgXML.Classes.Class)
 
 	for logicalName, classXMLGroup := range classesXMLGrouped {
 		classModel, err := o.processClassGroup(logicalName, classXMLGroup)
 		if err != nil {
-			// Errors from processClassGroup are often due to filtered classes, so we just log and continue.
 			o.logger.Debug("Skipping class group.", "class", logicalName, "reason", err)
 			continue
 		}
@@ -109,58 +96,45 @@ func (o *processingOrchestrator) processPackage(pkgXML PackageXML) (*model.Assem
 	return assembly, nil
 }
 
-// groupClassesByLogicalName groups XML class fragments. It determines the correct language
-// formatter for each fragment and asks it for the logical parent class name.
 func (o *processingOrchestrator) groupClassesByLogicalName(classes []ClassXML) map[string][]ClassXML {
 	grouped := make(map[string][]ClassXML)
 	for _, classXML := range classes {
-		// Find the correct formatter for this class fragment based on its file path.
-		// Use the default formatter if no file path is available.
-		formatter := formatter.FindFormatterForFile(classXML.Filename)
-
-		// Use the formatter to get the true logical name.
+		formatter := language.FindProcessorForFile(classXML.Filename)
 		logicalName := formatter.GetLogicalClassName(classXML.Name)
 		grouped[logicalName] = append(grouped[logicalName], classXML)
 	}
 	return grouped
 }
 
-// processClassGroup processes all XML fragments for a single logical class.
 func (o *processingOrchestrator) processClassGroup(logicalClassName string, classXMLs []ClassXML) (*model.Class, error) {
 	if len(classXMLs) == 0 {
-		return nil, nil // Should not happen if called from groupClassesByLogicalName
+		return nil, nil
 	}
 
-	// Use the first fragment's info to make class-level decisions. This is a safe
-	// heuristic since all fragments have already been grouped by their logical parent.
-	primaryFormatter := formatter.FindFormatterForFile(classXMLs[0].Filename)
+	primaryFormatter := language.FindProcessorForFile(classXMLs[0].Filename)
 
 	if !o.config.ClassFilters().IsElementIncludedInReport(logicalClassName) {
 		return nil, fmt.Errorf("class '%s' is excluded by filters", logicalClassName)
 	}
 
 	classModel := &model.Class{
-		Name:    logicalClassName, // The raw, logical name used for internal tracking.
+		Name:    logicalClassName,
 		Files:   []model.CodeFile{},
 		Methods: []model.Method{},
 		Metrics: make(map[string]float64),
 	}
 
-	// Use the formatter to decide if this entire logical class is compiler-generated noise.
 	if primaryFormatter.IsCompilerGeneratedClass(classModel) {
 		return nil, fmt.Errorf("class '%s' is a compiler-generated type and was filtered out", logicalClassName)
 	}
 
-	// Use the formatter to create the final, human-readable display name.
 	classModel.DisplayName = primaryFormatter.FormatClassName(classModel)
 
 	classProcessedFilePaths := make(map[string]struct{})
 	xmlFragmentsByFile := o.groupClassFragmentsByFile(classXMLs)
 
 	for filePath, fragmentsForFile := range xmlFragmentsByFile {
-		// For each file, find ITS specific formatter. This handles polyglot partial classes.
-		fileFormatter := formatter.FindFormatterForFile(filePath)
-
+		fileFormatter := language.FindProcessorForFile(filePath)
 		codeFile, methodsInFile, err := o.processFileForClass(filePath, classModel, fragmentsForFile, fileFormatter)
 		if err != nil {
 			o.logger.Warn("Failed to process file for class, skipping file.", "file", filePath, "class", classModel.DisplayName, "error", err)
@@ -178,21 +152,30 @@ func (o *processingOrchestrator) processClassGroup(logicalClassName string, clas
 	return classModel, nil
 }
 
-// processFileForClass processes all XML fragments associated with a single source file.
-// It now requires the file-specific language formatter.
-func (o *processingOrchestrator) processFileForClass(filePath string, classModel *model.Class, fragments []ClassXML, fileFormatter formatter.LanguageFormatter) (*model.CodeFile, []model.Method, error) {
+func (o *processingOrchestrator) processFileForClass(filePath string, classModel *model.Class, fragments []ClassXML, fileFormatter language.Processor) (*model.CodeFile, []model.Method, error) {
 	resolvedPath, err := utils.FindFileInSourceDirs(filePath, o.sourceDirs, o.fileReader)
 	if err != nil {
 		o.logger.Warn("Source file not found, line content will be missing.", "file", filePath, "class", classModel.DisplayName)
-		resolvedPath = filePath // Use original path as fallback
+		resolvedPath = filePath
 	}
+
+	complexityMetrics, err := fileFormatter.CalculateCyclomaticComplexity(resolvedPath)
+	if err != nil && !errors.Is(err, language.ErrNotSupported) {
+		o.logger.Warn("Failed to calculate cyclomatic complexity", "file", resolvedPath, "error", err)
+	}
+	complexityMap := make(map[string]model.MethodMetric)
+	for _, m := range complexityMetrics {
+		complexityMap[m.Name] = m
+	}
+	// =================================================================
 
 	sourceLines, _ := o.fileReader.ReadFile(resolvedPath)
 	totalLines := o.getTotalLines(resolvedPath, sourceLines)
 	maxLineNumInFile := getMaxLineNumber(fragments)
 	mergedLineHits, mergedBranches := o.mergeLineAndBranchData(fragments)
 
-	methodsInFile, codeElementsInFile, err := o.processMethodsForFile(fragments, classModel, fileFormatter)
+	// Pass the complexity map down to the method processor
+	methodsInFile, codeElementsInFile, err := o.processMethodsForFile(fragments, classModel, fileFormatter, complexityMap)
 	if err != nil {
 		return nil, nil, fmt.Errorf("processing methods for file %s: %w", filePath, err)
 	}
@@ -208,7 +191,6 @@ func (o *processingOrchestrator) processFileForClass(filePath string, classModel
 		CodeElements:   codeElementsInFile,
 	}
 
-	// Consolidate method metrics into the code file
 	for _, method := range methodsInFile {
 		if method.MethodMetrics != nil {
 			codeFile.MethodMetrics = append(codeFile.MethodMetrics, method.MethodMetrics...)
@@ -219,13 +201,13 @@ func (o *processingOrchestrator) processFileForClass(filePath string, classModel
 	return codeFile, methodsInFile, nil
 }
 
-// processMethodsForFile extracts and processes all methods, passing the formatter down.
-func (o *processingOrchestrator) processMethodsForFile(fragments []ClassXML, classModel *model.Class, fileFormatter formatter.LanguageFormatter) ([]model.Method, []model.CodeElement, error) {
+func (o *processingOrchestrator) processMethodsForFile(fragments []ClassXML, classModel *model.Class, fileFormatter language.Processor, complexityMap map[string]model.MethodMetric) ([]model.Method, []model.CodeElement, error) {
 	var allMethods []model.Method
 
 	for _, fragment := range fragments {
 		for _, methodXML := range fragment.Methods.Method {
-			methodModel := o.processMethodXML(methodXML, classModel, fileFormatter)
+			// Pass complexity map to the method processor
+			methodModel := o.processMethodXML(methodXML, classModel, fileFormatter, complexityMap)
 			allMethods = append(allMethods, *methodModel)
 		}
 	}
@@ -239,36 +221,39 @@ func (o *processingOrchestrator) processMethodsForFile(fragments []ClassXML, cla
 		allCodeElements = append(allCodeElements, o.createCodeElementFromMethod(&distinctMethods[i], fileFormatter))
 	}
 
-	// Sort the final lists for consistent reporting.
 	utils.SortByLineAndName(distinctMethods)
 	utils.SortByLineAndName(allCodeElements)
 
 	return distinctMethods, allCodeElements, nil
 }
 
-// processMethodXML transforms a single method XML element into a rich model.Method object
-// by delegating name formatting to the provided formatter.
-func (o *processingOrchestrator) processMethodXML(methodXML MethodXML, classModel *model.Class, fileFormatter formatter.LanguageFormatter) *model.Method {
-	// Create the method model with RAW data from the XML.
+func (o *processingOrchestrator) processMethodXML(methodXML MethodXML, classModel *model.Class, fileFormatter language.Processor, complexityMap map[string]model.MethodMetric) *model.Method {
 	method := &model.Method{
 		Name:       methodXML.Name,
 		Signature:  methodXML.Signature,
 		Complexity: parseFloat(methodXML.Complexity),
 	}
 
-	// Ask the formatter to create the clean display name.
 	method.DisplayName = fileFormatter.FormatMethodName(method, classModel)
 
+	// =================================================================
+	// NEW: Enrich method with calculated complexity if available
+	// =================================================================
+	if metric, ok := complexityMap[method.DisplayName]; ok {
+		if len(metric.Metrics) > 0 {
+			// Override the complexity from the Cobertura file with our more accurate one.
+			method.Complexity = metric.Metrics[0].Value.(float64)
+		}
+	}
+	// =================================================================
+
 	o.processMethodLines(methodXML, method)
-	o.populateStandardMethodMetrics(method)
+	o.populateStandardMethodMetrics(method) // This will now use the new complexity
 
 	return method
 }
 
-// createCodeElementFromMethod creates a model.CodeElement from a method, using the
-// formatter to determine its type (Method vs. Property).
-func (o *processingOrchestrator) createCodeElementFromMethod(method *model.Method, fileFormatter formatter.LanguageFormatter) model.CodeElement {
-	// Ask the formatter to determine the element type.
+func (o *processingOrchestrator) createCodeElementFromMethod(method *model.Method, fileFormatter language.Processor) model.CodeElement {
 	elementType := fileFormatter.CategorizeCodeElement(method)
 
 	var coverageQuota *float64
@@ -292,19 +277,9 @@ func (o *processingOrchestrator) createCodeElementFromMethod(method *model.Metho
 	}
 }
 
-// ====== The rest of the file contains helper functions that were already language-agnostic ======
-// ====== and do not need to change. They are included for completeness. ======
+// The rest of this file (helper functions) remains unchanged as they are not
+// directly involved in calculating or setting the cyclomatic complexity.
 
-// ... (All other helper functions from the original file are included here without changes) ...
-// E.g., mergeLineAndBranchData, assembleLinesForFile, processMethodLines, processLineXML,
-// setFallbackBranchData, populateStandardMethodMetrics, calculateCrapScore,
-// aggregateAssemblyMetrics, aggregateClassMetrics, getTotalLines, getMaxLineNumber,
-// mergeBranches, findNamedGroup, parseInt, parseFloat, determineLineVisitStatus.
-//
-// These functions correctly interact with the Cobertura XML structure or perform
-// universal calculations and do not need modification for this refactor.
-
-// processMethodLines processes the <line> elements within a <method> to determine line/branch rates and line ranges.
 func (o *processingOrchestrator) processMethodLines(methodXML MethodXML, method *model.Method) {
 	minLine, maxLine := math.MaxInt32, 0
 	var methodLinesCovered, methodLinesValid int
@@ -355,7 +330,6 @@ func (o *processingOrchestrator) processMethodLines(methodXML MethodXML, method 
 	}
 }
 
-// processLineXML transforms a single line XML element into a rich model.Line object.
 func (o *processingOrchestrator) processLineXML(lineXML LineXML) (model.Line, fileProcessingMetrics) {
 	metrics := fileProcessingMetrics{}
 	lineNumber, _ := strconv.Atoi(lineXML.Number)

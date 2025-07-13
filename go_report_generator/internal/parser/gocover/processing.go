@@ -1,6 +1,7 @@
 package gocover
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
@@ -10,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
@@ -193,11 +194,24 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		o.logger.Warn("Failed to parse Go source for functions, method metrics will be unavailable.", "file", resolvedPath, "error", err)
 	}
 
+	// =================================================================
+	// NEW: Calculate Cyclomatic Complexity
+	// =================================================================
+	langProcessor := language.FindProcessorForFile(filePath)
+	complexityMetrics, err := langProcessor.CalculateCyclomaticComplexity(resolvedPath)
+	if err != nil && !errors.Is(err, language.ErrNotSupported) {
+		o.logger.Warn("Failed to calculate cyclomatic complexity", "file", resolvedPath, "error", err)
+	}
+
+	complexityMap := make(map[string]model.MethodMetric)
+	for _, m := range complexityMetrics {
+		complexityMap[m.Name] = m
+	}
+	// =================================================================
+
 	blocksByMethod := make(map[string][]GoCoverProfileBlock)
 	for _, block := range blocks {
 		for _, pMethod := range parsedMethods {
-			// *** FIX: More robust association. A block belongs to a method if the block's start line
-			// is within the method's line range from the AST. ***
 			if block.StartLine >= pMethod.StartLine && block.StartLine <= pMethod.EndLine {
 				blocksByMethod[pMethod.DisplayName] = append(blocksByMethod[pMethod.DisplayName], block)
 				break
@@ -207,8 +221,6 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 
 	var methods []model.Method
 	var codeElements []model.CodeElement
-	langFormatter := formatter.FindFormatterForFile("file.go")
-
 	for _, pMethod := range parsedMethods {
 		methodBlocks := blocksByMethod[pMethod.DisplayName]
 		totalStatements := 0
@@ -234,6 +246,18 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 			LineRate:    lineRate,
 			Complexity:  math.NaN(),
 		}
+
+		// =================================================================
+		// NEW: Enrich method with complexity
+		// =================================================================
+		if metric, ok := complexityMap[method.DisplayName]; ok {
+			if len(metric.Metrics) > 0 {
+				method.Complexity = metric.Metrics[0].Value.(float64)
+				// The metric itself will be added to the method's metrics list by populateStandardGoMethodMetrics
+			}
+		}
+		// =================================================================
+
 		o.populateStandardGoMethodMetrics(&method)
 		methods = append(methods, method)
 
@@ -241,7 +265,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		codeElements = append(codeElements, model.CodeElement{
 			Name:          utils.GetShortMethodName(method.DisplayName),
 			FullName:      method.DisplayName,
-			Type:          langFormatter.CategorizeCodeElement(&method),
+			Type:          langProcessor.CategorizeCodeElement(&method),
 			FirstLine:     method.FirstLine,
 			LastLine:      method.LastLine,
 			CoverageQuota: &lineRateForQuota,
@@ -251,7 +275,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 	lineData := make(map[int]int)
 	for _, block := range blocks {
 		for l := block.StartLine; l <= block.EndLine; l++ {
-			if block.HitCount > lineData[l] {
+			if _, ok := lineData[l]; !ok || block.HitCount > lineData[l] {
 				lineData[l] = block.HitCount
 			}
 		}
@@ -303,7 +327,6 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 	return codeFile, methods
 }
 
-// ... rest of file is unchanged ...
 func (o *processingOrchestrator) populateStandardGoMethodMetrics(method *model.Method) {
 	method.MethodMetrics = []model.MethodMetric{}
 	shortMetricName := utils.GetShortMethodName(method.DisplayName)
