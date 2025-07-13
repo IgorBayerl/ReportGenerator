@@ -194,9 +194,6 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		o.logger.Warn("Failed to parse Go source for functions, method metrics will be unavailable.", "file", resolvedPath, "error", err)
 	}
 
-	// =================================================================
-	// NEW: Calculate Cyclomatic Complexity
-	// =================================================================
 	langProcessor := language.FindProcessorForFile(filePath)
 	complexityMetrics, err := langProcessor.CalculateCyclomaticComplexity(resolvedPath)
 	if err != nil && !errors.Is(err, language.ErrNotSupported) {
@@ -207,7 +204,6 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 	for _, m := range complexityMetrics {
 		complexityMap[m.Name] = m
 	}
-	// =================================================================
 
 	blocksByMethod := make(map[string][]GoCoverProfileBlock)
 	for _, block := range blocks {
@@ -247,16 +243,11 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 			Complexity:  math.NaN(),
 		}
 
-		// =================================================================
-		// NEW: Enrich method with complexity
-		// =================================================================
 		if metric, ok := complexityMap[method.DisplayName]; ok {
 			if len(metric.Metrics) > 0 {
 				method.Complexity = metric.Metrics[0].Value.(float64)
-				// The metric itself will be added to the method's metrics list by populateStandardGoMethodMetrics
 			}
 		}
-		// =================================================================
 
 		o.populateStandardGoMethodMetrics(&method)
 		methods = append(methods, method)
@@ -295,6 +286,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		lineNumber := i + 1
 		hits, isBlockMember := lineData[lineNumber]
 		line := model.Line{Number: lineNumber, Content: lineContent, Hits: -1}
+
 		if isBlockMember {
 			line.Hits = hits
 			line.LineVisitStatus = model.NotCovered
@@ -304,6 +296,12 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		} else {
 			line.LineVisitStatus = model.NotCoverable
 		}
+
+		if strings.TrimSpace(lineContent) == "}" {
+			line.LineVisitStatus = model.NotCoverable
+			line.Hits = -1
+		}
+
 		finalLines = append(finalLines, line)
 	}
 
@@ -326,6 +324,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 
 	return codeFile, methods
 }
+
 
 func (o *processingOrchestrator) populateStandardGoMethodMetrics(method *model.Method) {
 	method.MethodMetrics = []model.MethodMetric{}
