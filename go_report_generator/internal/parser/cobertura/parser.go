@@ -79,6 +79,8 @@ func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 // and delegates the complex processing logic to the processingOrchestrator, which
 // handles per-file language detection and formatting.
 func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
+	logger := config.Logger().With(slog.String("parser", cp.Name()), slog.String("file", filePath))
+
 	rawReport, sourceDirsFromXML, err := cp.loadAndUnmarshalCoberturaXML(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load/unmarshal Cobertura XML from %s: %w", filePath, err)
@@ -88,14 +90,14 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 
 	// The orchestrator is now simpler and does not take a pre-determined formatter.
 	// It will determine the formatter for each file internally.
-	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs)
+	orchestrator := newProcessingOrchestrator(cp.fileReader, config, effectiveSourceDirs, logger)
 
 	assemblies, detectedBranchSupport, err := orchestrator.processPackages(rawReport.Packages.Package)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process Cobertura packages: %w", err)
 	}
 
-	timestamp := cp.getReportTimestamp(rawReport.Timestamp)
+	timestamp := cp.getReportTimestamp(rawReport.Timestamp, logger)
 
 	return &parser.ParserResult{
 		Assemblies:             assemblies,
@@ -135,13 +137,13 @@ func (cp *CoberturaParser) getEffectiveSourceDirs(config parser.ParserConfig, so
 }
 
 // getReportTimestamp parses the Cobertura timestamp string into a *time.Time object.
-func (cp *CoberturaParser) getReportTimestamp(rawTimestamp string) *time.Time {
+func (cp *CoberturaParser) getReportTimestamp(rawTimestamp string, logger *slog.Logger) *time.Time {
 	if rawTimestamp == "" {
 		return nil
 	}
 	parsedTs, err := strconv.ParseInt(rawTimestamp, 10, 64)
 	if err != nil {
-		slog.Warn("Failed to parse Cobertura timestamp", "timestamp", rawTimestamp, "error", err)
+		logger.Warn("Failed to parse Cobertura timestamp", "timestamp", rawTimestamp, "error", err)
 		return nil
 	}
 
@@ -155,7 +157,7 @@ func (cp *CoberturaParser) getReportTimestamp(rawTimestamp string) *time.Time {
 		return &t
 	}
 
-	slog.Warn("Cobertura timestamp is outside the valid range", "timestamp", rawTimestamp)
+	logger.Warn("Cobertura timestamp is outside the valid range", "timestamp", rawTimestamp)
 	return nil
 }
 

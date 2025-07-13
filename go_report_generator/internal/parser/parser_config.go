@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
@@ -24,6 +25,7 @@ type ParserConfig interface {
 	ClassFilters() filtering.IFilter
 	FileFilters() filtering.IFilter
 	Settings() *settings.Settings
+	Logger() *slog.Logger 
 }
 
 type IParser interface {

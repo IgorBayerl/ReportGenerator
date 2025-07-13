@@ -41,6 +41,7 @@ type processingOrchestrator struct {
 	uniqueFilePathsForGrandTotalLines map[string]int
 	processedAssemblyFiles            map[string]struct{}
 	detectedBranchCoverage            bool
+	logger                            *slog.Logger
 }
 
 // newProcessingOrchestrator creates a new orchestrator for processing Cobertura data.
@@ -48,6 +49,7 @@ func newProcessingOrchestrator(
 	fileReader FileReader,
 	config parser.ParserConfig,
 	sourceDirs []string,
+	logger *slog.Logger,
 ) *processingOrchestrator {
 	return &processingOrchestrator{
 		fileReader:                        fileReader,
@@ -55,6 +57,7 @@ func newProcessingOrchestrator(
 		sourceDirs:                        sourceDirs,
 		uniqueFilePathsForGrandTotalLines: make(map[string]int),
 		detectedBranchCoverage:            false,
+		logger:                            logger,
 	}
 }
 
@@ -64,7 +67,7 @@ func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model
 	for _, pkgXML := range packages {
 		assembly, err := o.processPackage(pkgXML)
 		if err != nil {
-			slog.Warn("Could not process Cobertura package, skipping.", "package", pkgXML.Name, "error", err)
+			o.logger.Warn("Could not process Cobertura package, skipping.", "package", pkgXML.Name, "error", err)
 			continue
 		}
 		if assembly != nil {
@@ -77,6 +80,7 @@ func (o *processingOrchestrator) processPackages(packages []PackageXML) ([]model
 // processPackage transforms a single PackageXML to a model.Assembly.
 func (o *processingOrchestrator) processPackage(pkgXML PackageXML) (*model.Assembly, error) {
 	if !o.config.AssemblyFilters().IsElementIncludedInReport(pkgXML.Name) {
+		o.logger.Debug("Skipping assembly excluded by filter", "assembly", pkgXML.Name)
 		return nil, nil
 	}
 
@@ -89,11 +93,11 @@ func (o *processingOrchestrator) processPackage(pkgXML PackageXML) (*model.Assem
 	// Group class XML fragments by their logical name, determined by the appropriate language formatter.
 	classesXMLGrouped := o.groupClassesByLogicalName(pkgXML.Classes.Class)
 
-	for _, classXMLGroup := range classesXMLGrouped {
-		classModel, err := o.processClassGroup(classXMLGroup)
+	for logicalName, classXMLGroup := range classesXMLGrouped {
+		classModel, err := o.processClassGroup(logicalName, classXMLGroup)
 		if err != nil {
 			// Errors from processClassGroup are often due to filtered classes, so we just log and continue.
-			slog.Debug("Skipping class group.", "reason", err)
+			o.logger.Debug("Skipping class group.", "class", logicalName, "reason", err)
 			continue
 		}
 		if classModel != nil {
@@ -122,7 +126,7 @@ func (o *processingOrchestrator) groupClassesByLogicalName(classes []ClassXML) m
 }
 
 // processClassGroup processes all XML fragments for a single logical class.
-func (o *processingOrchestrator) processClassGroup(classXMLs []ClassXML) (*model.Class, error) {
+func (o *processingOrchestrator) processClassGroup(logicalClassName string, classXMLs []ClassXML) (*model.Class, error) {
 	if len(classXMLs) == 0 {
 		return nil, nil // Should not happen if called from groupClassesByLogicalName
 	}
@@ -130,7 +134,6 @@ func (o *processingOrchestrator) processClassGroup(classXMLs []ClassXML) (*model
 	// Use the first fragment's info to make class-level decisions. This is a safe
 	// heuristic since all fragments have already been grouped by their logical parent.
 	primaryFormatter := formatter.FindFormatterForFile(classXMLs[0].Filename)
-	logicalClassName := primaryFormatter.GetLogicalClassName(classXMLs[0].Name)
 
 	if !o.config.ClassFilters().IsElementIncludedInReport(logicalClassName) {
 		return nil, fmt.Errorf("class '%s' is excluded by filters", logicalClassName)
@@ -160,7 +163,7 @@ func (o *processingOrchestrator) processClassGroup(classXMLs []ClassXML) (*model
 
 		codeFile, methodsInFile, err := o.processFileForClass(filePath, classModel, fragmentsForFile, fileFormatter)
 		if err != nil {
-			slog.Warn("Failed to process file for class, skipping file.", "file", filePath, "class", classModel.DisplayName, "error", err)
+			o.logger.Warn("Failed to process file for class, skipping file.", "file", filePath, "class", classModel.DisplayName, "error", err)
 			continue
 		}
 
@@ -180,7 +183,7 @@ func (o *processingOrchestrator) processClassGroup(classXMLs []ClassXML) (*model
 func (o *processingOrchestrator) processFileForClass(filePath string, classModel *model.Class, fragments []ClassXML, fileFormatter formatter.LanguageFormatter) (*model.CodeFile, []model.Method, error) {
 	resolvedPath, err := utils.FindFileInSourceDirs(filePath, o.sourceDirs, o.fileReader)
 	if err != nil {
-		slog.Warn("Source file not found, line content will be missing.", "file", filePath, "class", classModel.DisplayName)
+		o.logger.Warn("Source file not found, line content will be missing.", "file", filePath, "class", classModel.DisplayName)
 		resolvedPath = filePath // Use original path as fallback
 	}
 

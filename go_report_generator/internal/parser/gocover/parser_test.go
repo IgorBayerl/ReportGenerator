@@ -3,6 +3,7 @@ package gocover
 import (
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,7 @@ type mockParserConfig struct {
 	classFilter    filtering.IFilter
 	fileFilter     filtering.IFilter
 	settings       *settings.Settings
+	logger         func() // Dummy logger for interface compliance
 }
 
 func (m *mockParserConfig) SourceDirectories() []string        { return m.srcDirs }
@@ -74,6 +76,7 @@ func (m *mockParserConfig) AssemblyFilters() filtering.IFilter { return m.assemb
 func (m *mockParserConfig) ClassFilters() filtering.IFilter    { return m.classFilter }
 func (m *mockParserConfig) FileFilters() filtering.IFilter     { return m.fileFilter }
 func (m *mockParserConfig) Settings() *settings.Settings       { return m.settings }
+func (m *mockParserConfig) Logger() *slog.Logger               { return nil }
 
 func newTestConfig() *mockParserConfig {
 	noFilter, _ := filtering.NewDefaultFilter(nil)
@@ -306,10 +309,11 @@ func Divide(a, b int) int {
 	coveredCount := 0
 
 	for _, line := range file.Lines {
-		if line.LineVisitStatus == model.Covered {
+		switch line.LineVisitStatus {
+		case model.Covered:
 			coveredCount++
 			t.Logf("Line %d: COVERED (hits: %d) - %s", line.Number, line.Hits, strings.TrimSpace(line.Content))
-		} else if line.LineVisitStatus == model.NotCovered {
+		case model.NotCovered:
 			t.Logf("Line %d: NOT COVERED (hits: %d) - %s", line.Number, line.Hits, strings.TrimSpace(line.Content))
 		}
 

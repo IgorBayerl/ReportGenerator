@@ -2,13 +2,14 @@ package gocover
 
 import (
 	"fmt"
-	"go/ast"
 	goparser "go/parser"
 	"go/token"
 	"log/slog"
 	"math"
 	"path/filepath"
 	"strings"
+
+	"go/ast"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
@@ -21,6 +22,7 @@ type processingOrchestrator struct {
 	fileReader   FileReader
 	config       parser.ParserConfig
 	assemblyName string
+	logger       *slog.Logger
 }
 
 // parsedMethod is a temporary struct to hold data from AST (Abstract System Tree) parsing.
@@ -31,10 +33,11 @@ type parsedMethod struct {
 	EndLine     int
 }
 
-func newProcessingOrchestrator(fileReader FileReader, config parser.ParserConfig) *processingOrchestrator {
+func newProcessingOrchestrator(fileReader FileReader, config parser.ParserConfig, logger *slog.Logger) *processingOrchestrator {
 	return &processingOrchestrator{
 		fileReader: fileReader,
 		config:     config,
+		logger:     logger,
 	}
 }
 
@@ -54,9 +57,9 @@ func (o *processingOrchestrator) processBlocks(blocks []GoCoverProfileBlock) ([]
 		modName, err := o.findModuleNameFromGoMod(startPath)
 		if err == nil {
 			foundAssemblyName = modName
-			slog.Info("Discovered Go module name for assembly", "name", foundAssemblyName)
+			o.logger.Info("Discovered Go module name for assembly", "name", foundAssemblyName)
 		} else {
-			slog.Warn("Could not discover Go module name, falling back to default.", "error", err)
+			o.logger.Warn("Could not discover Go module name, falling back to default.", "error", err)
 		}
 	}
 	if foundAssemblyName != "" {
@@ -195,7 +198,7 @@ func (o *processingOrchestrator) processPackage(pkgPath string, fileBlocks map[s
 func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverProfileBlock) (*model.CodeFile, []model.Method) {
 	resolvedPath, err := utils.FindFileInSourceDirs(filePath, o.config.SourceDirectories(), o.fileReader)
 	if err != nil {
-		slog.Warn("Source file not found, line content will be missing.", "file", filePath, "error", err)
+		o.logger.Warn("Source file not found, line content will be missing.", "file", filePath, "error", err)
 		resolvedPath = filePath
 	}
 
@@ -203,7 +206,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 	totalLines, _ := o.fileReader.CountLines(resolvedPath)
 
 	if len(sourceLines) == 0 {
-		slog.Warn("Source file is empty or could not be read.", "file", resolvedPath)
+		o.logger.Warn("Source file is empty or could not be read.", "file", resolvedPath)
 		return nil, nil
 	}
 
@@ -227,7 +230,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 
 	parsedMethods, err := parseGoSourceForFunctions(resolvedPath, sourceLines)
 	if err != nil {
-		slog.Warn("Failed to parse Go source for functions, method metrics will be unavailable.", "file", resolvedPath, "error", err)
+		o.logger.Warn("Failed to parse Go source for functions, method metrics will be unavailable.", "file", resolvedPath, "error", err)
 	}
 
 	var methods []model.Method

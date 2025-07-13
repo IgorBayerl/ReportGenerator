@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
@@ -76,12 +77,14 @@ func (p *GoCoverParser) SupportsFile(filePath string) bool {
 // Parse reads the entire Go coverage report, transforms it into `GoCoverProfileBlock`s,
 // and then delegates the complex processing to the processingOrchestrator.
 func (p *GoCoverParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
+	logger := config.Logger().With(slog.String("parser", p.Name()), slog.String("file", filePath))
+
 	profileBlocks, err := p.loadAndParseGoCoverFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load/parse Go coverage file from %s: %w", filePath, err)
 	}
 
-	orchestrator := newProcessingOrchestrator(p.fileReader, config)
+	orchestrator := newProcessingOrchestrator(p.fileReader, config, logger)
 
 	assemblies, err := orchestrator.processBlocks(profileBlocks)
 	if err != nil {
