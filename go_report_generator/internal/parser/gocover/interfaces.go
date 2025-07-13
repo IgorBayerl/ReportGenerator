@@ -1,4 +1,4 @@
-package cobertura
+package gocover
 
 import "io/fs"
 

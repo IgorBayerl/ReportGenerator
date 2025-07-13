@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strconv"
@@ -29,6 +30,10 @@ func (dfr *DefaultFileReader) ReadFile(path string) ([]string, error) {
 
 func (dfr *DefaultFileReader) CountLines(path string) (int, error) {
 	return filereader.CountLinesInFile(path)
+}
+
+func (dfr *DefaultFileReader) Stat(name string) (fs.FileInfo, error) {
+	return os.Stat(name)
 }
 
 func NewCoberturaParser(fileReader FileReader) parser.IParser {

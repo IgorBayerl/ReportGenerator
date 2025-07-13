@@ -29,6 +29,7 @@ import (
 
 	// Import parsers for side-effect registration
 	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura"
+	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/gocover"
 )
 
 type cliFlags struct {

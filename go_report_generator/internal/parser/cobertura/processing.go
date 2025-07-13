@@ -178,7 +178,7 @@ func (o *processingOrchestrator) processClassGroup(classXMLs []ClassXML) (*model
 // processFileForClass processes all XML fragments associated with a single source file.
 // It now requires the file-specific language formatter.
 func (o *processingOrchestrator) processFileForClass(filePath string, classModel *model.Class, fragments []ClassXML, fileFormatter formatter.LanguageFormatter) (*model.CodeFile, []model.Method, error) {
-	resolvedPath, err := utils.FindFileInSourceDirs(filePath, o.sourceDirs)
+	resolvedPath, err := utils.FindFileInSourceDirs(filePath, o.sourceDirs, o.fileReader)
 	if err != nil {
 		slog.Warn("Source file not found, line content will be missing.", "file", filePath, "class", classModel.DisplayName)
 		resolvedPath = filePath // Use original path as fallback

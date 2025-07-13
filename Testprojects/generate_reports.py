@@ -1,8 +1,3 @@
-# TODO: Before running this script to generate Go reports,
-# ensure the Angular SPA is built. Navigate to
-# 'go_report_generator/angular_frontend_spa/' and run:
-# npm install (if not done already)
-# npm run build
 #!/usr/bin/env python3
 """
 Universal Coverage Reporter Script
@@ -11,60 +6,42 @@ This script automates the process of generating code coverage reports for both C
 and Go projects. It performs the following main steps:
 
 1.  **For C# Projects**:
-    * Runs `dotnet test` to generate Cobertura XML coverage files.
-    * Uses a custom Go-based report generator (`go_report_generator`) to create reports
+    *   Runs `dotnet test` to generate Cobertura XML coverage files.
+    *   Uses a custom Go-based report generator (`go_report_generator`) to create reports
         from the Cobertura XML.
-    * Uses the standard .NET `ReportGenerator` tool to create reports from the
+    *   Uses the standard .NET `ReportGenerator` tool to create reports from the
         Cobertura XML.
 
 2.  **For Go Projects**:
-    * Runs `go test` to generate native Go coverage profiles.
-    * Converts the native Go coverage to Cobertura XML format using `gocover-cobertura`.
-    * Uses the custom Go-based report generator (`go_report_generator`) to create
-        reports from the Cobertura XML.
-    * Uses the standard .NET `ReportGenerator` tool to create reports from the
-        Cobertura XML.
+    *   Runs `go test` to generate native Go coverage profiles (`coverage.out`).
+    *   Uses the custom Go tool to generate a report directly from `coverage.out`.
+    *   Converts `coverage.out` to Cobertura XML format using `gocover-cobertura`.
+    *   Uses the custom Go tool to generate a report from the converted Cobertura XML.
+    *   Uses the standard .NET `ReportGenerator` tool to create reports from the Cobertura XML.
+
+3.  **For Merged Reports**:
+    *   Takes the C# Cobertura XML and the Go native coverage file as inputs.
+    *   Uses the custom Go tool to generate a single, unified report combining the
+        coverage data from both projects.
 
 The script allows specifying desired report types by modifying the
 `SELECTED_REPORT_TYPES_CONFIG_STRING` variable in the `main` function.
 
 Prerequisites:
-    * .NET SDK (for `dotnet test` and `ReportGenerator.dll`)
-    * Go (for `go test`, `go run`, and `gocover-cobertura`)
-    * `gocover-cobertura` executable in your PATH or accessible.
-        (Can be installed via `go install github.com/t-yuki/gocover-cobertura@latest`)
-    * The custom `go_report_generator` project correctly set up.
-    * The .NET `ReportGenerator.Console.NetCore.dll` built and accessible.
-
-Directory Structure Assumption:
-    The script assumes a specific directory structure:
-    <root>/
-    ├── Testprojects/ (This script is located here, e.g., Testprojects/run_coverage.py)
-    │   ├── CSharp/
-    │   │   ├── Project_DotNetCore/
-    │   │   │   └── UnitTests/UnitTests.csproj
-    │   │   └── Reports/ (Output for C# Cobertura and generated reports)
-    │   └── Go/ (Go project to be tested, also output for Go coverage files)
-    ├── reports/ (Parent directory for consolidated reports)
-    │   ├── csharp_project_go_tool_report/
-    │   ├── csharp_project_dotnet_tool_report/
-    │   ├── go_project_go_tool_report/
-    │   ├── go_project_dotnet_tool_report/
-    ├── go_report_generator/
-    │   └── cmd/main.go (Custom Go report generator tool)
-    └── src/
-        └── ReportGenerator.Console.NetCore/
-            └── bin/Debug/net8.0/ReportGenerator.dll (.NET ReportGenerator tool)
+    *   .NET SDK (for `dotnet test` and `ReportGenerator.dll`)
+    *   Go (for `go test`, `go run`, and `gocover-cobertura`)
+    *   `gocover-cobertura` executable in your PATH or accessible.
+        (Install via: go install github.com/t-yuki/gocover-cobertura@latest)
+    *   Node.js and npm to build the Angular SPA for the HTML reports. Before running,
+        ensure you have run `npm install` and `npm run build` inside the
+        `go_report_generator/angular_frontend_spa/` directory.
 
 Usage Example:
-    To run the script:
-    1. Edit the `SELECTED_REPORT_TYPES_CONFIG_STRING` in the `main` function
-       of this script to define your desired comma-separated report types
-       (e.g., "TextSummary,Html").
-    2. Run the script from the `Testprojects` directory:
-       ```bash
-       python run_coverage.py
-       ```
+    1.  Edit `SELECTED_REPORT_TYPES_CONFIG_STRING` in `main()` to define report types.
+    2.  Run the script from the `Testprojects` directory:
+        ```bash
+        python generate_reports.py
+        ```
 """
 import subprocess
 import sys
@@ -82,21 +59,23 @@ CSHARP_REPORTS_FROM_GO_TOOL_DIR = SCRIPT_ROOT.parent / "reports/csharp_project_g
 CSHARP_REPORTS_FROM_DOTNET_TOOL_DIR = SCRIPT_ROOT.parent / "reports/csharp_project_dotnet_tool_report"
 
 # --- Go Project Specific Paths ---
-GO_PROJECT_TO_TEST_PATH = SCRIPT_ROOT / "Go"  # Path to the Go project being tested
-GO_PROJECT_NATIVE_COVERAGE_FILE = GO_PROJECT_TO_TEST_PATH / "coverage.out"  # Native Go coverage output
-GO_PROJECT_COBERTURA_XML_FILE = GO_PROJECT_TO_TEST_PATH / "coverage.cobertura.xml"  # Cobertura from Go native
-GO_PROJECT_REPORTS_FROM_GO_TOOL_DIR = SCRIPT_ROOT.parent / "reports/go_project_go_tool_report"
+GO_PROJECT_TO_TEST_PATH = SCRIPT_ROOT / "Go"
+GO_PROJECT_NATIVE_COVERAGE_FILE = GO_PROJECT_TO_TEST_PATH / "coverage.out"
+GO_PROJECT_COBERTURA_XML_FILE = GO_PROJECT_TO_TEST_PATH / "coverage.cobertura.xml"
+GO_PROJECT_REPORTS_FROM_GO_TOOL_NATIVE_DIR = SCRIPT_ROOT.parent / "reports/go_project_go_tool_native_report"
+GO_PROJECT_REPORTS_FROM_GO_TOOL_COBERTURA_DIR = SCRIPT_ROOT.parent / "reports/go_project_go_tool_cobertura_report"
 GO_PROJECT_REPORTS_FROM_DOTNET_TOOL_DIR = SCRIPT_ROOT.parent / "reports/go_project_dotnet_tool_report"
 
+# --- Merged Project Paths ---
+MERGED_REPORT_DIR = SCRIPT_ROOT.parent / "reports/merged_csharp_go_report"
+
 # --- Common Tool Paths ---
-# Assuming go_report_generator is at the root of your project, sibling to Testprojects
 GO_REPORT_GENERATOR_CMD_PATH = SCRIPT_ROOT.parent / "go_report_generator/cmd"
-# Assuming src is at the root, sibling to Testprojects
 DOTNET_REPORT_GENERATOR_DLL_PATH = SCRIPT_ROOT.parent / "src/ReportGenerator.Console.NetCore/bin/Debug/net8.0/ReportGenerator.dll"
 
 # --- Report File Names (for verification) ---
 TEXT_SUMMARY_FILE_NAME = "Summary.txt"
-HTML_REPORT_INDEX_FILE_NAME = "index.html" # Common for .NET ReportGenerator HTML reports
+HTML_REPORT_INDEX_FILE_NAME = "index.html"
 
 # --- End of Constants ---
 
@@ -107,13 +86,6 @@ def run_command(command_args_or_string, working_dir=None, command_name="Command"
     if shell and not is_string_command:
         print(f"Error: If shell=True, command must be a string. Got: {command_args_or_string}", file=sys.stderr)
         sys.exit(1)
-    if not shell and is_string_command:
-        # For flexibility, allow string if shell=False, but split it using shlex
-        # However, the script mostly uses lists for shell=False, which is preferred.
-        # This check can be made stricter if needed.
-        # For now, let's assume the user will pass a list for shell=False.
-        # This part of the check can be refined based on actual usage patterns.
-        pass # Original script had an error here, but subprocess.run can take a string if it's just the exe.
 
     cmd_display_str = command_args_or_string if is_string_command else ' '.join(map(str, command_args_or_string))
     print(f"Executing {command_name}: {cmd_display_str[:120]}{'...' if len(cmd_display_str) > 120 else ''}")
@@ -125,9 +97,9 @@ def run_command(command_args_or_string, working_dir=None, command_name="Command"
             capture_output=True,
             text=True,
             cwd=working_dir,
-            check=False, # We will check returncode manually for better error reporting
+            check=False,
             shell=shell,
-            env=os.environ.copy() # Pass current environment
+            env=os.environ.copy()
         )
 
         if process.stdout:
@@ -158,10 +130,7 @@ def ensure_dir(dir_path: pathlib.Path):
         sys.exit(1)
 
 def check_generated_files(output_dir: pathlib.Path, report_types: list[str], tool_name: str) -> bool:
-    """
-    Checks if expected report files were generated based on report_types.
-    Returns True if all expected files are found and non-empty, False otherwise.
-    """
+    """Checks if expected report files were generated based on report_types."""
     all_ok = True
     checked_something = False
 
@@ -178,7 +147,7 @@ def check_generated_files(output_dir: pathlib.Path, report_types: list[str], too
             print(f"Error: {tool_name} TextSummary report not generated or is empty at {summary_file}", file=sys.stderr)
             all_ok = False
         else:
-            print(f"{tool_name} TextSummary report generated: {summary_file}")
+            print(f"  OK: {tool_name} TextSummary report generated: {summary_file}")
 
     html_report_types_keywords = {"Html", "HtmlInline", "HtmlChart", "HtmlSummary", "Html_Dark"}
     if any(rt_keyword in rt for rt_keyword in html_report_types_keywords for rt in report_types):
@@ -188,34 +157,17 @@ def check_generated_files(output_dir: pathlib.Path, report_types: list[str], too
             print(f"Error: {tool_name} HTML report (index.html) not generated or is empty at {index_html_file}", file=sys.stderr)
             all_ok = False
         else:
-            print(f"{tool_name} HTML report (index.html) generated: {index_html_file}")
-    
-    # Example for a generic "Xml" report type check
-    if "Xml" in report_types:
-        checked_something = True
-        # .NET ReportGenerator often names this "Coverage.xml" or similar in the root of targetdir
-        # The custom Go tool might name it differently or put it in a subfolder.
-        # This check might need refinement based on actual output of your tools for "Xml" type.
-        potential_xml_files = list(output_dir.glob("*.xml")) # Basic check
-        # A more specific check if the name is known:
-        # xml_file = output_dir / "Coverage.xml" # Or "Cobertura.xml" etc.
-        # if not xml_file.exists() or xml_file.stat().st_size == 0:
-
-        if not potential_xml_files or not any(f.stat().st_size > 0 for f in potential_xml_files):
-            print(f"Error: {tool_name} XML report not found or all potential XML files are empty in {output_dir}", file=sys.stderr)
-            all_ok = False
-        else:
-            print(f"{tool_name} XML report (or similar) likely generated in: {output_dir}")
-
+            print(f"  OK: {tool_name} HTML report (index.html) generated: {index_html_file}")
 
     if not checked_something and report_types:
         print(f"Warning: No specific file checks implemented for configured report types: {', '.join(report_types)} by {tool_name}. Assuming success if command ran.", file=sys.stderr)
-        return True # Default to true if command ran and no specific checks failed.
+        return True
 
     return all_ok
 
 
 def run_csharp_workflow(report_types_list: list[str]):
+    """Generates C# coverage and creates reports using both Go and .NET tools."""
     print("\n--- Starting C# Project Workflow ---")
     for dir_path in [CSHARP_COVERAGE_OUTPUT_DIR, CSHARP_REPORTS_FROM_GO_TOOL_DIR, CSHARP_REPORTS_FROM_DOTNET_TOOL_DIR]:
         ensure_dir(dir_path)
@@ -233,155 +185,172 @@ def run_csharp_workflow(report_types_list: list[str]):
         sys.exit(1)
     print(f"C# Cobertura XML generated: {CSHARP_COBERTURA_XML_PATH}")
 
-
-    # --- Report Generation with Go tool ---
-    if GO_REPORT_GENERATOR_CMD_PATH.is_dir() and (GO_REPORT_GENERATOR_CMD_PATH / "main.go").is_file():
+    if GO_REPORT_GENERATOR_CMD_PATH.is_dir():
         print("\n--- Generating C# report with Go tool ---")
-        go_tool_report_types_arg_value = ",".join(report_types_list)
+        go_tool_report_types_arg = ",".join(report_types_list)
         go_report_command_csharp = [
             "go", "run", ".",
             f"-report={CSHARP_COBERTURA_XML_PATH.resolve()}",
             f"-output={CSHARP_REPORTS_FROM_GO_TOOL_DIR.resolve()}",
-            f"-reporttypes={go_tool_report_types_arg_value}" # Assumes Go tool uses -reporttypes=type1,type2
+            f"-reporttypes={go_tool_report_types_arg}"
         ]
         run_command(go_report_command_csharp, working_dir=GO_REPORT_GENERATOR_CMD_PATH, command_name="Go Report Generator (for C#)")
         if not check_generated_files(CSHARP_REPORTS_FROM_GO_TOOL_DIR, report_types_list, "C# Go-tool"):
-            print("Error C# workflow: Go tool report generation verification failed.", file=sys.stderr)
-            sys.exit(1)
+            sys.exit("Error: C# workflow Go tool report verification failed.")
     else:
-        print("Skipping Go Report Generator for C#: Tool not found or not configured.")
+        print("Skipping Go Report Generator for C#: Tool not found.")
 
-
-    # --- Report Generation with .NET tool ---
     if DOTNET_REPORT_GENERATOR_DLL_PATH.exists():
         print("\n--- Generating C# report with .NET tool ---")
-        dotnet_tool_report_types_arg_value = ";".join(report_types_list) # .NET ReportGenerator uses semicolon
+        dotnet_tool_report_types_arg = ";".join(report_types_list)
         dotnet_rg_command_csharp = [
             "dotnet", str(DOTNET_REPORT_GENERATOR_DLL_PATH.resolve()),
             f"-reports:{CSHARP_COBERTURA_XML_PATH.resolve()}",
             f"-targetdir:{CSHARP_REPORTS_FROM_DOTNET_TOOL_DIR.resolve()}",
-            f"-reporttypes:{dotnet_tool_report_types_arg_value}"
+            f"-reporttypes:{dotnet_tool_report_types_arg}"
         ]
         run_command(dotnet_rg_command_csharp, command_name=".NET ReportGenerator (for C#)")
         if not check_generated_files(CSHARP_REPORTS_FROM_DOTNET_TOOL_DIR, report_types_list, "C# .NET-tool"):
-            print("Error C# workflow: .NET tool report generation verification failed.", file=sys.stderr)
-            sys.exit(1)
+            sys.exit("Error: C# workflow .NET tool report verification failed.")
     else:
-        print("Skipping .NET ReportGenerator for C#: Tool not found or not configured.")
+        print("Skipping .NET ReportGenerator for C#: Tool not found.")
 
     print("--- C# Project Workflow Finished Successfully ---")
 
 
 def run_go_project_workflow(report_types_list: list[str]):
+    """Generates Go coverage and creates reports using multiple methods for comparison."""
     print("\n--- Starting Go Project Workflow ---")
-    for dir_path in [GO_PROJECT_REPORTS_FROM_GO_TOOL_DIR, GO_PROJECT_REPORTS_FROM_DOTNET_TOOL_DIR]:
+    for dir_path in [
+        GO_PROJECT_REPORTS_FROM_GO_TOOL_NATIVE_DIR,
+        GO_PROJECT_REPORTS_FROM_GO_TOOL_COBERTURA_DIR,
+        GO_PROJECT_REPORTS_FROM_DOTNET_TOOL_DIR
+    ]:
         ensure_dir(dir_path)
 
     if not GO_PROJECT_TO_TEST_PATH.is_dir():
-        print(f"Error: Go project to test not found or is not a directory at {GO_PROJECT_TO_TEST_PATH}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(f"Error: Go project to test not found at {GO_PROJECT_TO_TEST_PATH}")
     print(f"Go project directory found: {GO_PROJECT_TO_TEST_PATH}")
 
     GO_PROJECT_NATIVE_COVERAGE_FILE.unlink(missing_ok=True)
     GO_PROJECT_COBERTURA_XML_FILE.unlink(missing_ok=True)
     print("Old Go coverage files removed.")
 
-    print("\n--- Generating native Go coverage ---")
-    go_test_command = [
-        "go", "test", f"-coverprofile={GO_PROJECT_NATIVE_COVERAGE_FILE.name}", "./..."
-    ]
+    print("\n--- Step 1: Generating native Go coverage ---")
+    go_test_command = ["go", "test", f"-coverprofile={GO_PROJECT_NATIVE_COVERAGE_FILE.name}", "./..."]
     run_command(go_test_command, working_dir=GO_PROJECT_TO_TEST_PATH, command_name="go test (Go project)")
     if not (GO_PROJECT_NATIVE_COVERAGE_FILE.exists() and GO_PROJECT_NATIVE_COVERAGE_FILE.stat().st_size > 0):
-        print(f"Error: Go native coverage not generated or is empty at {GO_PROJECT_NATIVE_COVERAGE_FILE}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(f"Error: Go native coverage not generated or is empty at {GO_PROJECT_NATIVE_COVERAGE_FILE}")
     print(f"Go native coverage generated: {GO_PROJECT_NATIVE_COVERAGE_FILE}")
 
-    print("\n--- Converting Go native coverage to Cobertura XML ---")
-    gocover_cobertura_command_str = (
-        f"gocover-cobertura < \"{GO_PROJECT_NATIVE_COVERAGE_FILE.name}\""
-        f" > \"{GO_PROJECT_COBERTURA_XML_FILE.name}\""
-    )
-    run_command(gocover_cobertura_command_str,
-                working_dir=GO_PROJECT_TO_TEST_PATH,
-                command_name="gocover-cobertura",
-                shell=True)
-    if not (GO_PROJECT_COBERTURA_XML_FILE.exists() and GO_PROJECT_COBERTURA_XML_FILE.stat().st_size > 0):
-        print(f"Error: Go project Cobertura XML not generated or is empty at {GO_PROJECT_COBERTURA_XML_FILE}", file=sys.stderr)
-        sys.exit(1)
-    print(f"Go project Cobertura XML generated: {GO_PROJECT_COBERTURA_XML_FILE}")
+    go_tool_report_types_arg = ",".join(report_types_list)
 
-    # --- Report Generation with Go tool ---
-    if GO_REPORT_GENERATOR_CMD_PATH.is_dir() and (GO_REPORT_GENERATOR_CMD_PATH / "main.go").is_file():
-        print("\n--- Generating Go project report with Go tool ---")
-        go_tool_report_types_arg_value = ",".join(report_types_list)
-        go_report_command_go_proj = [
+    if GO_REPORT_GENERATOR_CMD_PATH.is_dir():
+        print("\n--- Step 2: Generating report with Go tool (from native .out file) ---")
+        go_report_command_go_native = [
+            "go", "run", ".",
+            f"-report={GO_PROJECT_NATIVE_COVERAGE_FILE.resolve()}",
+            f"-output={GO_PROJECT_REPORTS_FROM_GO_TOOL_NATIVE_DIR.resolve()}",
+            f"-reporttypes={go_tool_report_types_arg}",
+            f"-sourcedirs={GO_PROJECT_TO_TEST_PATH.resolve()}"
+        ]
+        run_command(go_report_command_go_native, working_dir=GO_REPORT_GENERATOR_CMD_PATH, command_name="Go Report Generator (for Go native)")
+        if not check_generated_files(GO_PROJECT_REPORTS_FROM_GO_TOOL_NATIVE_DIR, report_types_list, "Go-project Go-tool (Native)"):
+            sys.exit("Error: Go project workflow native Go tool report verification failed.")
+
+        print("\n--- Step 3: Converting Go native coverage to Cobertura XML ---")
+        gocover_cobertura_command_str = f'gocover-cobertura < "{GO_PROJECT_NATIVE_COVERAGE_FILE.name}" > "{GO_PROJECT_COBERTURA_XML_FILE.name}"'
+        run_command(gocover_cobertura_command_str, working_dir=GO_PROJECT_TO_TEST_PATH, command_name="gocover-cobertura", shell=True)
+        if not (GO_PROJECT_COBERTURA_XML_FILE.exists() and GO_PROJECT_COBERTURA_XML_FILE.stat().st_size > 0):
+            sys.exit(f"Error: Go Cobertura XML not generated or is empty at {GO_PROJECT_COBERTURA_XML_FILE}")
+        print(f"Go project Cobertura XML generated: {GO_PROJECT_COBERTURA_XML_FILE}")
+
+        print("\n--- Step 4: Generating report with Go tool (from Cobertura XML) ---")
+        go_report_command_go_cobertura = [
             "go", "run", ".",
             f"-report={GO_PROJECT_COBERTURA_XML_FILE.resolve()}",
-            f"-output={GO_PROJECT_REPORTS_FROM_GO_TOOL_DIR.resolve()}",
-            f"-reporttypes={go_tool_report_types_arg_value}"
+            f"-output={GO_PROJECT_REPORTS_FROM_GO_TOOL_COBERTURA_DIR.resolve()}",
+            f"-reporttypes={go_tool_report_types_arg}"
         ]
-        run_command(go_report_command_go_proj, working_dir=GO_REPORT_GENERATOR_CMD_PATH, command_name="Go Report Generator (for Go project)")
-        if not check_generated_files(GO_PROJECT_REPORTS_FROM_GO_TOOL_DIR, report_types_list, "Go-project Go-tool"):
-            print("Error Go project workflow: Go tool report generation verification failed.", file=sys.stderr)
-            sys.exit(1)
+        run_command(go_report_command_go_cobertura, working_dir=GO_REPORT_GENERATOR_CMD_PATH, command_name="Go Report Generator (for Go Cobertura)")
+        if not check_generated_files(GO_PROJECT_REPORTS_FROM_GO_TOOL_COBERTURA_DIR, report_types_list, "Go-project Go-tool (Cobertura)"):
+            sys.exit("Error: Go project workflow Cobertura Go tool report verification failed.")
     else:
-        print("Skipping Go Report Generator for Go Project: Tool not found or not configured.")
+        print("Skipping Go Report Generator for Go Project: Tool not found.")
 
-
-    # --- Report Generation with .NET tool ---
     if DOTNET_REPORT_GENERATOR_DLL_PATH.exists():
-        print("\n--- Generating Go project report with .NET tool ---")
-        dotnet_tool_report_types_arg_value = ";".join(report_types_list)
+        print("\n--- Step 5: Generating report with .NET tool (from Cobertura XML) ---")
+        dotnet_tool_report_types_arg = ";".join(report_types_list)
         dotnet_rg_command_go_proj = [
             "dotnet", str(DOTNET_REPORT_GENERATOR_DLL_PATH.resolve()),
             f"-reports:{GO_PROJECT_COBERTURA_XML_FILE.resolve()}",
             f"-targetdir:{GO_PROJECT_REPORTS_FROM_DOTNET_TOOL_DIR.resolve()}",
-            f"-reporttypes:{dotnet_tool_report_types_arg_value}"
+            f"-reporttypes:{dotnet_tool_report_types_arg}"
         ]
         run_command(dotnet_rg_command_go_proj, command_name=".NET ReportGenerator (for Go project)")
         if not check_generated_files(GO_PROJECT_REPORTS_FROM_DOTNET_TOOL_DIR, report_types_list, "Go-project .NET-tool"):
-            print("Error Go project workflow: .NET tool report generation verification failed.", file=sys.stderr)
-            sys.exit(1)
+            sys.exit("Error: Go project workflow .NET tool report verification failed.")
     else:
-        print("Skipping .NET ReportGenerator for Go Project: Tool not found or not configured.")
+        print("Skipping .NET ReportGenerator for Go Project: Tool not found.")
 
     print("--- Go Project Workflow Finished Successfully ---")
 
+def run_merged_workflow(report_types_list: list[str]):
+    """Generates a single merged report from C# and Go coverage files."""
+    print("\n--- Starting Merged Project Workflow ---")
+    ensure_dir(MERGED_REPORT_DIR)
+
+    # Check if input files from previous workflows exist
+    if not CSHARP_COBERTURA_XML_PATH.exists():
+        print(f"Skipping merged report: C# Cobertura XML not found at {CSHARP_COBERTURA_XML_PATH}", file=sys.stderr)
+        return
+    if not GO_PROJECT_NATIVE_COVERAGE_FILE.exists():
+        print(f"Skipping merged report: Go native coverage not found at {GO_PROJECT_NATIVE_COVERAGE_FILE}", file=sys.stderr)
+        return
+    print("Source coverage files for merged report found.")
+
+    print("\n--- Generating merged report from C# Cobertura and Go native files ---")
+    
+    # The Go tool accepts multiple reports separated by a semicolon
+    merged_reports_arg = f"{CSHARP_COBERTURA_XML_PATH.resolve()};{GO_PROJECT_NATIVE_COVERAGE_FILE.resolve()}"
+    go_tool_report_types_arg = ",".join(report_types_list)
+
+    go_report_command_merged = [
+        "go", "run", ".",
+        f"-report={merged_reports_arg}",
+        f"-output={MERGED_REPORT_DIR.resolve()}",
+        f"-reporttypes={go_tool_report_types_arg}",
+        # Provide source directory for the Go part of the report.
+        # The Cobertura report should have its source paths embedded.
+        f"-sourcedirs={GO_PROJECT_TO_TEST_PATH.resolve()}"
+    ]
+    
+    run_command(go_report_command_merged, working_dir=GO_REPORT_GENERATOR_CMD_PATH, command_name="Go Report Generator (for Merged Report)")
+    
+    if not check_generated_files(MERGED_REPORT_DIR, report_types_list, "Merged Report Go-tool"):
+        sys.exit("Error: Merged report verification failed.")
+
+    print("--- Merged Project Workflow Finished Successfully ---")
+
 def main():
-    """Main function to orchestrate C# and Go project coverage and reporting."""
+    """Main function to orchestrate C#, Go, and merged project coverage and reporting."""
     print("Python script for C# and Go project coverage and reporting.")
 
     # --- Define desired report types here ---
-    # Uncomment one of the following lines to set the desired report types.
-    # Use a comma-separated string for multiple types.
-    # Examples: "TextSummary", "Html", "Xml", "Html,TextSummary"
-    # Ensure your report generator tools support the types you specify.
-    #
-    # SELECTED_REPORT_TYPES_CONFIG_STRING = "TextSummary"
-    SELECTED_REPORT_TYPES_CONFIG_STRING = "Html"
-    # SELECTED_REPORT_TYPES_CONFIG_STRING = "Html,TextSummary"
-    # SELECTED_REPORT_TYPES_CONFIG_STRING = "Html,TextSummary,Xml" # Ensure 'Xml' is handled by check_generated_files and tools
-    # SELECTED_REPORT_TYPES_CONFIG_STRING = "Cobertura" # If you want Cobertura output from ReportGenerator
-    # SELECTED_REPORT_TYPES_CONFIG_STRING = "" # This would cause an error
+    SELECTED_REPORT_TYPES_CONFIG_STRING = "Html,TextSummary"
 
     if not SELECTED_REPORT_TYPES_CONFIG_STRING or SELECTED_REPORT_TYPES_CONFIG_STRING.isspace():
-        print("Error: SELECTED_REPORT_TYPES_CONFIG_STRING is empty. Please define at least one report type.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit("Error: SELECTED_REPORT_TYPES_CONFIG_STRING is empty.")
 
-    # Parse the string into a list of report types
     active_report_types = [rt.strip() for rt in SELECTED_REPORT_TYPES_CONFIG_STRING.split(',') if rt.strip()]
-
     if not active_report_types:
-        print(f"Error: No valid report types parsed from '{SELECTED_REPORT_TYPES_CONFIG_STRING}'. Please check the format.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(f"Error: No valid report types parsed from '{SELECTED_REPORT_TYPES_CONFIG_STRING}'.")
 
     print(f"Target report types: {', '.join(active_report_types)}")
 
-
     # --- Pre-flight checks for tools ---
-    go_main_file = GO_REPORT_GENERATOR_CMD_PATH / "main.go"
-    if not GO_REPORT_GENERATOR_CMD_PATH.is_dir() or not go_main_file.is_file():
-        print(f"Warning: Go Report Generator 'main.go' not found in {GO_REPORT_GENERATOR_CMD_PATH} or path is not a directory. Go tool reporting will be skipped.", file=sys.stderr)
+    if not (GO_REPORT_GENERATOR_CMD_PATH.is_dir() and (GO_REPORT_GENERATOR_CMD_PATH / "main.go").is_file()):
+        print(f"Warning: Go Report Generator not found in {GO_REPORT_GENERATOR_CMD_PATH}. Go tool reporting will be skipped.", file=sys.stderr)
     else:
         print(f"Go Report Generator found at: {GO_REPORT_GENERATOR_CMD_PATH}")
 
@@ -394,6 +363,7 @@ def main():
     try:
         run_csharp_workflow(report_types_list=active_report_types)
         run_go_project_workflow(report_types_list=active_report_types)
+        run_merged_workflow(report_types_list=active_report_types)
         print("\nAll workflows completed successfully. Reports generated!")
     except SystemExit as e:
         print(f"\nScript terminated prematurely with exit code {e.code}.", file=sys.stderr)
