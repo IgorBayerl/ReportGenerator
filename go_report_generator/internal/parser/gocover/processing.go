@@ -2,14 +2,13 @@ package gocover
 
 import (
 	"fmt"
+	"go/ast"
 	goparser "go/parser"
 	"go/token"
 	"log/slog"
 	"math"
 	"path/filepath"
 	"strings"
-
-	"go/ast"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/formatter"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
@@ -121,52 +120,33 @@ func (o *processingOrchestrator) findModuleNameFromGoMod(startPath string) (stri
 	return "", fmt.Errorf("'module' directive not found in %s", goModPath)
 }
 
-// FIX: This function now correctly extracts the full package path from the file path.
 func (o *processingOrchestrator) groupFilesByPackage(blocks []GoCoverProfileBlock) map[string]map[string][]GoCoverProfileBlock {
 	filesByPackage := make(map[string]map[string][]GoCoverProfileBlock)
-
 	for _, block := range blocks {
 		if !o.config.FileFilters().IsElementIncludedInReport(block.FileName) {
 			continue
 		}
-
-		// The package path is the directory containing the file.
-		// block.FileName from `go test -coverprofile` is the full import path of the file.
-		// e.g., "test_project_go/calculator/entities.go"
-		pkgPath := filepath.Dir(block.FileName)
-
-		// Normalize to use forward slashes for consistent map keys.
-		pkgPath = filepath.ToSlash(pkgPath)
-
+		pkgPath := filepath.ToSlash(filepath.Dir(block.FileName))
 		if pkgPath == "." {
-			// A file in the root of the module belongs to the module's top-level package.
-			// We use the assembly name as the key in this case.
 			pkgPath = o.assemblyName
 		}
-
 		if _, ok := filesByPackage[pkgPath]; !ok {
 			filesByPackage[pkgPath] = make(map[string][]GoCoverProfileBlock)
 		}
-
 		filesByPackage[pkgPath][block.FileName] = append(filesByPackage[pkgPath][block.FileName], block)
 	}
-
 	return filesByPackage
 }
 
-// FIX: This function now correctly calculates the display name for the package.
 func (o *processingOrchestrator) processPackage(pkgPath string, fileBlocks map[string][]GoCoverProfileBlock) *model.Class {
 	if !o.config.ClassFilters().IsElementIncludedInReport(pkgPath) {
 		return nil
 	}
-
-	// Determine the display name by stripping the module prefix.
 	displayName := pkgPath
 	prefix := o.assemblyName + "/"
 	if strings.HasPrefix(pkgPath, prefix) {
 		displayName = strings.TrimPrefix(pkgPath, prefix)
 	} else if pkgPath == o.assemblyName {
-		// Handle the case where the package is the module itself (files in root).
 		displayName = "(root)"
 	}
 
@@ -191,7 +171,6 @@ func (o *processingOrchestrator) processPackage(pkgPath string, fileBlocks map[s
 		o.aggregateClassMetrics(packageClass)
 		return packageClass
 	}
-
 	return nil
 }
 
@@ -204,28 +183,9 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 
 	sourceLines, _ := o.fileReader.ReadFile(resolvedPath)
 	totalLines, _ := o.fileReader.CountLines(resolvedPath)
-
 	if len(sourceLines) == 0 {
 		o.logger.Warn("Source file is empty or could not be read.", "file", resolvedPath)
 		return nil, nil
-	}
-
-	type lineInfo struct {
-		hitCount      int
-		isLastInBlock bool
-	}
-	lineData := make(map[int]lineInfo)
-	for _, block := range blocks {
-		for line := block.StartLine; line <= block.EndLine; line++ {
-			info := lineData[line]
-			if block.HitCount > info.hitCount {
-				info.hitCount = block.HitCount
-			}
-			if line == block.EndLine {
-				info.isLastInBlock = true
-			}
-			lineData[line] = info
-		}
 	}
 
 	parsedMethods, err := parseGoSourceForFunctions(resolvedPath, sourceLines)
@@ -233,40 +193,44 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		o.logger.Warn("Failed to parse Go source for functions, method metrics will be unavailable.", "file", resolvedPath, "error", err)
 	}
 
+	blocksByMethod := make(map[string][]GoCoverProfileBlock)
+	for _, block := range blocks {
+		for _, pMethod := range parsedMethods {
+			// *** FIX: More robust association. A block belongs to a method if the block's start line
+			// is within the method's line range from the AST. ***
+			if block.StartLine >= pMethod.StartLine && block.StartLine <= pMethod.EndLine {
+				blocksByMethod[pMethod.DisplayName] = append(blocksByMethod[pMethod.DisplayName], block)
+				break
+			}
+		}
+	}
+
 	var methods []model.Method
 	var codeElements []model.CodeElement
 	langFormatter := formatter.FindFormatterForFile("file.go")
 
 	for _, pMethod := range parsedMethods {
-		var methodLines []model.Line
-		var methodLinesCovered, methodLinesValid int
+		methodBlocks := blocksByMethod[pMethod.DisplayName]
+		totalStatements := 0
+		coveredStatements := 0
 
-		for lineNum := pMethod.StartLine; lineNum <= pMethod.EndLine; lineNum++ {
-			if data, isBlockMember := lineData[lineNum]; isBlockMember {
-				isJustBrace := strings.TrimSpace(sourceLines[lineNum-1]) == "}"
-				isNonCoverableBrace := isJustBrace && data.isLastInBlock
-
-				if !isNonCoverableBrace {
-					methodLinesValid++
-					if data.hitCount > 0 {
-						methodLinesCovered++
-					}
-				}
-				methodLines = append(methodLines, model.Line{Number: lineNum, Hits: data.hitCount})
+		for _, block := range methodBlocks {
+			totalStatements += block.NumStatements
+			if block.HitCount > 0 {
+				coveredStatements += block.NumStatements
 			}
 		}
 
-		if methodLinesValid == 0 {
-			continue
+		var lineRate float64
+		if totalStatements > 0 {
+			lineRate = float64(coveredStatements) / float64(totalStatements)
 		}
 
-		lineRate := float64(methodLinesCovered) / float64(methodLinesValid)
 		method := model.Method{
 			Name:        pMethod.FuncName,
 			DisplayName: pMethod.DisplayName,
 			FirstLine:   pMethod.StartLine,
 			LastLine:    pMethod.EndLine,
-			Lines:       methodLines,
 			LineRate:    lineRate,
 			Complexity:  math.NaN(),
 		}
@@ -284,25 +248,34 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		})
 	}
 
+	lineData := make(map[int]int)
+	for _, block := range blocks {
+		for l := block.StartLine; l <= block.EndLine; l++ {
+			if block.HitCount > lineData[l] {
+				lineData[l] = block.HitCount
+			}
+		}
+	}
+
 	var finalLines []model.Line
-	var totalCovered, totalCoverable int
+	fileTotalCoveredStatements := 0
+	fileTotalCoverableStatements := 0
+	for _, block := range blocks {
+		fileTotalCoverableStatements += block.NumStatements
+		if block.HitCount > 0 {
+			fileTotalCoveredStatements += block.NumStatements
+		}
+	}
+
 	for i, lineContent := range sourceLines {
 		lineNumber := i + 1
-		data, isBlockMember := lineData[lineNumber]
+		hits, isBlockMember := lineData[lineNumber]
 		line := model.Line{Number: lineNumber, Content: lineContent, Hits: -1}
 		if isBlockMember {
-			isNonCoverableBrace := strings.TrimSpace(lineContent) == "}" && data.isLastInBlock
-			if !isNonCoverableBrace {
-				totalCoverable++
-				line.Hits = data.hitCount
-				if data.hitCount > 0 {
-					totalCovered++
-					line.LineVisitStatus = model.Covered
-				} else {
-					line.LineVisitStatus = model.NotCovered
-				}
-			} else {
-				line.LineVisitStatus = model.NotCoverable
+			line.Hits = hits
+			line.LineVisitStatus = model.NotCovered
+			if hits > 0 {
+				line.LineVisitStatus = model.Covered
 			}
 		} else {
 			line.LineVisitStatus = model.NotCoverable
@@ -320,8 +293,8 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 	codeFile := &model.CodeFile{
 		Path:           resolvedPath,
 		Lines:          finalLines,
-		CoveredLines:   totalCovered,
-		CoverableLines: totalCoverable,
+		CoveredLines:   fileTotalCoveredStatements,
+		CoverableLines: fileTotalCoverableStatements,
 		TotalLines:     totalLines,
 		CodeElements:   codeElements,
 		MethodMetrics:  methodMetricsForFile,
@@ -330,6 +303,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 	return codeFile, methods
 }
 
+// ... rest of file is unchanged ...
 func (o *processingOrchestrator) populateStandardGoMethodMetrics(method *model.Method) {
 	method.MethodMetrics = []model.MethodMetric{}
 	shortMetricName := utils.GetShortMethodName(method.DisplayName)
@@ -340,7 +314,6 @@ func (o *processingOrchestrator) populateStandardGoMethodMetrics(method *model.M
 			Metrics: []model.Metric{{Name: "Cyclomatic complexity", Value: method.Complexity, Status: model.StatusOk}},
 		})
 	}
-
 	lineCoveragePercentage := method.LineRate * 100.0
 	if !math.IsNaN(lineCoveragePercentage) {
 		method.MethodMetrics = append(method.MethodMetrics, model.MethodMetric{
@@ -348,7 +321,6 @@ func (o *processingOrchestrator) populateStandardGoMethodMetrics(method *model.M
 			Metrics: []model.Metric{{Name: "Line coverage", Value: lineCoveragePercentage, Status: model.StatusOk}},
 		})
 	}
-
 	if !math.IsNaN(method.Complexity) {
 		crapScoreValue := o.calculateCrapScore(method.LineRate, method.Complexity)
 		if !math.IsNaN(crapScoreValue) {
@@ -416,7 +388,6 @@ func parseGoSourceForFunctions(filePath string, sourceLines []string) ([]parsedM
 
 			if fn.Recv != nil && len(fn.Recv.List) > 0 {
 				typeExpr := fn.Recv.List[0].Type
-
 				var receiverTypeNameBuilder strings.Builder
 				var extractTypeName func(ast.Expr)
 				extractTypeName = func(e ast.Expr) {

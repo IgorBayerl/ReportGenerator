@@ -263,7 +263,7 @@ func (b *HtmlReportBuilder) buildSidebarElementViewModel(codeElem *model.CodeEle
 
 	var coverageTitleText string
 	if codeElem.CoverageQuota != nil {
-		sidebarElem.CoverageBarValue = int(math.Round(*codeElem.CoverageQuota))
+		sidebarElem.CoverageBarValue = getCoverageBarValue(*codeElem.CoverageQuota)
 		coverageTitleText = fmt.Sprintf("Line coverage: %.1f%%", *codeElem.CoverageQuota)
 	} else {
 		sidebarElem.CoverageBarValue = -1

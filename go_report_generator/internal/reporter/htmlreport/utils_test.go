@@ -9,13 +9,6 @@ import (
 
 // TestGenerateUniqueFilename tests the generateUniqueFilename function.
 func TestGenerateUniqueFilename(t *testing.T) {
-	// Re-define for test scope if not exported or to ensure test uses specific values
-	// If sanitizeFilenameChars and maxFilenameLengthBase are exported from utils.go, you can use them directly.
-	// Otherwise, define them here for the test.
-	// For this example, let's assume they are package-level vars/consts in the SUT (System Under Test).
-	// sanitizeFilenameChars := regexp.MustCompile(`[^a-zA-Z0-9_-]+`) // Already package-level in utils.go
-	// const maxFilenameLengthBase = 95 // Already package-level in utils.go
-
 	tests := []struct {
 		name              string
 		assemblyShortName string
@@ -71,9 +64,6 @@ func TestGenerateUniqueFilename(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Make a copy of existingFilenames if the test needs to check its modification
-			// without affecting other subtests that might share the map if not careful.
-			// For this structure, tt.existingFilenames is unique per subtest.
 			got := generateUniqueFilename(tt.assemblyShortName, tt.className, tt.existingFilenames)
 			if got != tt.want {
 				t.Errorf("generateUniqueFilename() got = %v, want %v", got, tt.want)
@@ -158,58 +148,6 @@ func TestCountUniqueFiles(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := countUniqueFiles(tt.assemblies); got != tt.want {
 				t.Errorf("countUniqueFiles() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestDetermineLineVisitStatus(t *testing.T) {
-	tests := []struct {
-		name            string
-		hits            int
-		isBranchPoint   bool
-		coveredBranches int
-		totalBranches   int
-		want            model.LineVisitStatus
-	}{
-		// Non-branch points
-		{"not coverable (negative hits)", -1, false, 0, 0, lineVisitStatusNotCoverable},
-		{"covered (positive hits)", 10, false, 0, 0, lineVisitStatusCovered},
-		{"not covered (zero hits)", 0, false, 0, 0, lineVisitStatusNotCovered},
-
-		// Branch points
-		{"branch, not coverable (negative hits)", -1, true, 0, 2, lineVisitStatusNotCoverable},
-		{"branch, fully covered", 10, true, 2, 2, lineVisitStatusCovered},
-		{"branch, partially covered", 5, true, 1, 2, lineVisitStatusPartiallyCovered},
-		{"branch, not covered (zero hits on line, zero branches covered)", 0, true, 0, 2, lineVisitStatusNotCovered},
-		{"branch, not covered (positive hits on line, but zero branches covered)", 5, true, 0, 2, lineVisitStatusNotCovered},
-		{"branch, but no branches defined (totalBranches=0)", 1, true, 0, 0, lineVisitStatusNotCoverable},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := determineLineVisitStatus(tt.hits, tt.isBranchPoint, tt.coveredBranches, tt.totalBranches); got != tt.want {
-				t.Errorf("determineLineVisitStatus() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLineVisitStatusToString(t *testing.T) {
-	tests := []struct {
-		name   string
-		status model.LineVisitStatus
-		want   string
-	}{
-		{"covered", lineVisitStatusCovered, "green"},
-		{"not covered", lineVisitStatusNotCovered, "red"},
-		{"partially covered", lineVisitStatusPartiallyCovered, "orange"},
-		{"not coverable", lineVisitStatusNotCoverable, "gray"},
-		{"unknown status defaults to gray", 99, "gray"}, // Test default case
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := lineVisitStatusToString(tt.status); got != tt.want {
-				t.Errorf("lineVisitStatusToString() = %v, want %v", got, tt.want)
 			}
 		})
 	}

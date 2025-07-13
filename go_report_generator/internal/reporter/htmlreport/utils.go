@@ -2,6 +2,7 @@ package htmlreport
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
@@ -42,13 +43,6 @@ func countUniqueFiles(assemblies []model.Assembly) int {
 	})
 
 	return len(distinctFiles)
-}
-
-func (b *HtmlReportBuilder) getClassReportFilename(assemblyShortName, className string, existingFilenames map[string]struct{}) string {
-	// The generateUniqueFilename function (from internal/reporter/htmlreport/utils.go)
-	// now handles all the logic for processing className, sanitizing, truncating,
-	// and ensuring uniqueness with a counter.
-	return generateUniqueFilename(assemblyShortName, className, existingFilenames)
 }
 
 func determineLineVisitStatus(hits int, isBranchPoint bool, coveredBranches int, totalBranches int) model.LineVisitStatus { // Changed return type
@@ -141,4 +135,46 @@ func generateUniqueFilename(
 
 	existingFilenames[normalizedFileNameToCheck] = struct{}{}
 	return fileName
+}
+
+// getCoverageBarValue snaps a coverage percentage (0-100) to the nearest available CSS class value.
+func getCoverageBarValue(coverage float64) int {
+	if math.IsNaN(coverage) || coverage < 0 {
+		return -1 // Special value for the template to hide the bar
+	}
+
+	rounded := int(math.Round(coverage))
+
+	if rounded <= 0 {
+		return 0 // Fully covered
+	}
+	if rounded <= 10 {
+		return 10
+	}
+	if rounded <= 20 {
+		return 20
+	}
+	if rounded <= 30 {
+		return 30
+	}
+	if rounded <= 40 {
+		return 40
+	}
+	if rounded <= 50 {
+		return 50
+	}
+	if rounded <= 60 {
+		return 60
+	}
+	if rounded <= 70 {
+		return 70
+	}
+	if rounded <= 80 {
+		return 80
+	}
+	if rounded <= 90 {
+		return 90
+	}
+
+	return 100
 }

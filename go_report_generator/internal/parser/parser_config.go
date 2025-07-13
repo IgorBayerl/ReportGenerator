@@ -25,7 +25,7 @@ type ParserConfig interface {
 	ClassFilters() filtering.IFilter
 	FileFilters() filtering.IFilter
 	Settings() *settings.Settings
-	Logger() *slog.Logger 
+	Logger() *slog.Logger
 }
 
 type IParser interface {
