@@ -14,6 +14,7 @@ import (
 var supportedReportTypes = map[string]bool{
 	"TextSummary": true,
 	"Html":        true,
+	"Lcov":        true,
 }
 
 // ReportConfiguration struct remains the same.

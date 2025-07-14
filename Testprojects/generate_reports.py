@@ -76,6 +76,7 @@ DOTNET_REPORT_GENERATOR_DLL_PATH = SCRIPT_ROOT.parent / "src/ReportGenerator.Con
 # --- Report File Names (for verification) ---
 TEXT_SUMMARY_FILE_NAME = "Summary.txt"
 HTML_REPORT_INDEX_FILE_NAME = "index.html"
+LCOV_REPORT_FILE_NAME = "lcov.info"
 
 # --- End of Constants ---
 
@@ -158,6 +159,15 @@ def check_generated_files(output_dir: pathlib.Path, report_types: list[str], too
             all_ok = False
         else:
             print(f"  OK: {tool_name} HTML report (index.html) generated: {index_html_file}")
+
+    if "lcov" in report_types:
+        checked_something = True
+        lcov_file = output_dir / LCOV_REPORT_FILE_NAME
+        if not lcov_file.exists() or lcov_file.stat().st_size == 0:
+            print(f"Error: {tool_name} LCOV report not generated or is empty at {lcov_file}", file=sys.stderr)
+            all_ok = False
+        else:
+            print(f"  OK: {tool_name} LCOV report generated: {lcov_file}")
 
     if not checked_something and report_types:
         print(f"Warning: No specific file checks implemented for configured report types: {', '.join(report_types)} by {tool_name}. Assuming success if command ran.", file=sys.stderr)
@@ -337,7 +347,7 @@ def main():
     print("Python script for C# and Go project coverage and reporting.")
 
     # --- Define desired report types here ---
-    SELECTED_REPORT_TYPES_CONFIG_STRING = "Html,TextSummary"
+    SELECTED_REPORT_TYPES_CONFIG_STRING = "Html,TextSummary,Lcov"
 
     if not SELECTED_REPORT_TYPES_CONFIG_STRING or SELECTED_REPORT_TYPES_CONFIG_STRING.isspace():
         sys.exit("Error: SELECTED_REPORT_TYPES_CONFIG_STRING is empty.")

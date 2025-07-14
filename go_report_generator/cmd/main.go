@@ -19,6 +19,7 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/htmlreport"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/lcov"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/textsummary"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
@@ -259,6 +260,10 @@ func generateReports(reportCtx reporting.IReportContext, summaryResult *model.Su
 		case "Html":
 			if err := htmlreport.NewHtmlReportBuilder(outputDir, reportCtx).CreateReport(summaryResult); err != nil {
 				return fmt.Errorf("failed to generate HTML report: %w", err)
+			}
+		case "Lcov":
+			if err := lcov.NewLcovReportBuilder(outputDir).CreateReport(summaryResult); err != nil {
+				return fmt.Errorf("failed to generate lcov report: %w", err)
 			}
 		}
 	}
