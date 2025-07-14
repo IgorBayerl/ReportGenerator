@@ -39,6 +39,7 @@ This project is a work in progress. The following table tracks the implementatio
 | | Multiple/Merged Reports | ✅ | ✅ | Merging is a core feature of the `analyzer`. |
 | **Output Formats** | **HTML (SPA)** | ✅ | ✅ | Go version generates a modern Angular-based SPA. |
 | | **TextSummary** | ✅ | ✅ | |
+| | **lcov** | ✅ | ✅ | |
 | | Badge | ✅ | ❌ | |
 | | CodeClimate | ✅ | ❌ | |
 | | Cobertura | ✅ | ❌ | |
@@ -48,7 +49,6 @@ This project is a work in progress. The following table tracks the implementatio
 | | HtmlSummary | ✅ | ❌ | |
 | | JsonSummary | ✅ | ❌ | |
 | | Latex | ✅ | ❌ | |
-| | lcov | ✅ | ❌ | |
 | | MHtml | ✅ | ❌ | |
 | | PngChart | ✅ | ❌ | |
 | | SvgChart | ✅ | ❌ | |
