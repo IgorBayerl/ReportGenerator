@@ -16,22 +16,25 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/glob"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/htmlreport"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/lcov"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/textsummary"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 
-	// Import language utils for side-effect registration
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/csharp"
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/default"
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
+	// reporters
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/htmlreport"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/lcov"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter/textsummary"
 
-	// Import parsers for side-effect registration
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura"
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/gocover"
+	// language specific behaviours
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/csharp"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/defaultformatter"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
+
+	// parsers
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/gocover"
 )
 
 type cliFlags struct {
@@ -155,7 +158,7 @@ func resolveAndValidateInputs(logger *slog.Logger, flags *cliFlags) ([]string, [
 	return actualReportFiles, invalidPatterns, nil
 }
 
-func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel, actualReportFiles, invalidPatterns []string, logger *slog.Logger) (*reportconfig.ReportConfiguration, error) {
+func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel, actualReportFiles, invalidPatterns []string, langFactory *language.ProcessorFactory, logger *slog.Logger) (*reportconfig.ReportConfiguration, error) {
 	reportTypes := strings.Split(*flags.reportTypes, ",")
 	sourceDirsList := strings.Split(*flags.sourceDirs, ",")
 	assemblyFilterStrings := strings.Split(*flags.assemblyFilters, ";")
@@ -179,6 +182,7 @@ func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel
 			rhAssemblyFilterStrings,
 			rhClassFilterStrings,
 		),
+		reportconfig.WithLanguageProcessorFactory(langFactory),
 	}
 
 	return reportconfig.NewReportConfiguration(
@@ -188,13 +192,14 @@ func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel
 	)
 }
 
-func parseAndMergeReports(logger *slog.Logger, reportConfig *reportconfig.ReportConfiguration) (*model.SummaryResult, error) {
+func parseAndMergeReports(logger *slog.Logger, reportConfig *reportconfig.ReportConfiguration, parserFactory *parser.ParserFactory) (*model.SummaryResult, error) {
 	var parserResults []*parser.ParserResult
 	var parserErrors []string
 
 	for _, reportFile := range reportConfig.ReportFiles() {
 		logger.Info("Attempting to parse report file", "file", reportFile)
-		parserInstance, err := parser.FindParserForFile(reportFile)
+		// Use the injected factory instance to find the right parser
+		parserInstance, err := parserFactory.FindParserForFile(reportFile)
 		if err != nil {
 			msg := fmt.Sprintf("no suitable parser found for file %s: %v", reportFile, err)
 			parserErrors = append(parserErrors, msg)
@@ -203,6 +208,8 @@ func parseAndMergeReports(logger *slog.Logger, reportConfig *reportconfig.Report
 		}
 
 		logger.Info("Using parser for file", "parser", parserInstance.Name(), "file", reportFile)
+
+		// The Parse method will now use the language factory from the reportConfig
 		result, err := parserInstance.Parse(reportFile, reportConfig)
 		if err != nil {
 			msg := fmt.Sprintf("error parsing file %s with %s: %v", reportFile, parserInstance.Name(), err)
@@ -289,6 +296,25 @@ func run() error {
 
 	logger := slog.Default()
 
+	// --- EXPLICIT DEPENDENCY CREATION AND INJECTION ---
+
+	// 1. Create all desired language processors and the factory that holds them.
+	langFactory := language.NewProcessorFactory(
+		defaultformatter.NewDefaultProcessor(),
+		csharp.NewCSharpProcessor(),
+		golang.NewGoProcessor(),
+	)
+
+	// 2. Create all desired parsers and the factory that holds them.
+	//    The fileReader dependency is created here once.
+	defaultFileReader := &cobertura.DefaultFileReader{}
+	parserFactory := parser.NewParserFactory(
+		cobertura.NewCoberturaParser(defaultFileReader),
+		gocover.NewGoCoverParser(defaultFileReader),
+	)
+
+	// --- END OF EXPLICIT CREATION ---
+
 	actualReportFiles, invalidPatterns, err := resolveAndValidateInputs(logger, flags)
 	if err != nil {
 		if len(invalidPatterns) > 0 {
@@ -297,12 +323,14 @@ func run() error {
 		return err
 	}
 
-	reportConfig, err := createReportConfiguration(flags, verbosity, actualReportFiles, invalidPatterns, logger)
+	// Pass the language factory to create the configuration
+	reportConfig, err := createReportConfiguration(flags, verbosity, actualReportFiles, invalidPatterns, langFactory, logger)
 	if err != nil {
 		return err
 	}
 
-	summaryResult, err := parseAndMergeReports(logger, reportConfig)
+	// Pass the parser factory to the parsing logic
+	summaryResult, err := parseAndMergeReports(logger, reportConfig, parserFactory)
 	if err != nil {
 		return err
 	}

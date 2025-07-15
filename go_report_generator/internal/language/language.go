@@ -39,33 +39,37 @@ type Processor interface {
 	CalculateCyclomaticComplexity(filePath string) ([]model.MethodMetric, error)
 }
 
-var registeredProcessors []Processor
-
-// RegisterProcessor adds a processor to the list of available processors.
-// This should be called by each processor implementation in its init() function.
-func RegisterProcessor(p Processor) {
-	registeredProcessors = append(registeredProcessors, p)
+type ProcessorFactory struct {
+	processors       []Processor
+	defaultProcessor Processor
 }
 
-// FindProcessorForFile iterates through registered processors to find one that
-// can handle the given file path. It is guaranteed to return a valid processor,
-// falling back to the "Default" processor.
-func FindProcessorForFile(filePath string) Processor {
-	var defaultProcessor Processor
+func NewProcessorFactory(processors ...Processor) *ProcessorFactory {
+	factory := &ProcessorFactory{
+		processors: make([]Processor, 0, len(processors)),
+	}
 
-	for _, p := range registeredProcessors {
+	for _, p := range processors {
 		if p.Name() == "Default" {
-			defaultProcessor = p
-			continue
+			factory.defaultProcessor = p
+		} else {
+			factory.processors = append(factory.processors, p)
 		}
+	}
+
+	if factory.defaultProcessor == nil {
+		panic("FATAL: Default language processor was not provided to the factory.")
+	}
+
+	return factory
+}
+
+func (f *ProcessorFactory) FindProcessorForFile(filePath string) Processor {
+	for _, p := range f.processors {
 		if p.Detect(filePath) {
 			return p
 		}
 	}
 
-	if defaultProcessor != nil {
-		return defaultProcessor
-	}
-
-	panic("FATAL: Default language processor was not registered.")
+	return f.defaultProcessor
 }

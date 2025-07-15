@@ -85,95 +85,46 @@ internal/parser/
 
 #### Step 2: Define the Input Structs (`input.go`)
 
-In `internal/parser/yourformat/input.go`, define Go structs that map directly to your input file format. This separates raw data structures from the application's universal `model`.
+In `internal/parser/yourformat/input.go`, define Go structs that map directly to your input file format.
 
 ```go
 // in: internal/parser/yourformat/input.go
 package yourformat
 
-// Example for a format that has "modules" containing "files"
-type YourFormatRoot struct {
-	Modules []YourFormatModule `json:"modules"`
-}
-
-type YourFormatModule struct {
-	Name  string           `json:"name"`
-	Files []YourFormatFile `json:"files"`
-}
-
-type YourFormatFile struct {
-	Path      string         `json:"path"`
-	LineHits  map[string]int `json:"lineHits"` // e.g., "10": 5 (line 10 has 5 hits)
-}
+type YourFormatRoot struct { /* ... */ }
 ```
 
 #### Step 3: Implement the `IParser` Interface (`parser.go`)
 
-This file is the public entrypoint. It implements `IParser` and uses an `init()` function to register itself with the application's parser factory.
+This file is the public entrypoint. It implements `IParser`.
 
 ```go
 // in: internal/parser/yourformat/parser.go
 package yourformat
 
 import (
-	"encoding/json"
-	"io"
-	"os"
-
+	// ... your imports
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
 )
 
-// YourFormatParser implements the IParser interface.
-type YourFormatParser struct{}
-
-// init registers this parser with the central factory.
-func init() {
-	parser.RegisterParser(NewYourFormatParser())
+type YourFormatParser struct{
+    // ... dependencies like a file reader
 }
 
-// NewYourFormatParser creates a new, stateless parser instance.
-func NewYourFormatParser() parser.IParser {
-	return &YourFormatParser{}
+func NewYourFormatParser(/*...deps*/) parser.IParser {
+	return &YourFormatParser{/*...*/}
 }
 
-// Name returns the unique, human-readable name of the parser.
 func (p *YourFormatParser) Name() string {
 	return "YourFormat"
 }
 
-// SupportsFile performs a FAST check to see if this parser can handle the file.
 func (p *YourFormatParser) SupportsFile(filePath string) bool {
-	// A simple check based on file extension for this example.
-	return strings.HasSuffix(strings.ToLower(filePath), ".yourformat.json")
+	// ... quick check logic
 }
 
-// Parse reads the entire report file and transforms it into a universal ParserResult.
 func (p *YourFormatParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
-	// 1. Read the raw file content.
-	bytes, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
-	}
-
-	var rawReport YourFormatRoot
-	if err := json.Unmarshal(bytes, &rawReport); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YourFormat json from %s: %w", filePath, err)
-	}
-
-	// 2. Delegate the complex processing logic to keep this file clean.
-	processor := newYourFormatProcessor(config)
-	assemblies, sourceDirs, err := processor.Process(&rawReport)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process data from %s: %w", filePath, err)
-	}
-
-	// 3. Populate the ParserResult with the translated data.
-	return &parser.ParserResult{
-		Assemblies:             assemblies,
-		SourceDirectories:      sourceDirs,
-		SupportsBranchCoverage: false, // Set to true if your format has branch data.
-		ParserName:             p.Name(),
-	}, nil
+	// ... main parsing and translation logic
 }
 ```
 
@@ -185,47 +136,40 @@ This file does the actual work of translating your format into the `model` objec
 // in: internal/parser/yourformat/processing.go
 package yourformat
 
-import (
-    "log/slog"
-    "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-    "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
-)
-
-// yourFormatProcessor handles the transformation of "YourFormat" data.
-type yourFormatProcessor struct {
-	config parser.ParserConfig
-}
-
-func newYourFormatProcessor(config parser.ParserConfig) *yourFormatProcessor {
-	return &yourFormatProcessor{config: config}
-}
-
-// Process is the main entry point for the processor.
-func (p *yourFormatProcessor) Process(report *YourFormatRoot) (assemblies []model.Assembly, sourceDirs []string, err error) {
-    // ==========================================================================================
-    // TODO: This is where your main implementation work happens.
-    // The goal is to return a `[]model.Assembly`.
-    //
-    // 1. Loop through `report.Modules`, treating each as a `model.Assembly`.
-    //
-    // 2. Apply assembly filters.
-    //
-    // 3. For each module, determine a logical `model.Class` grouping. If the format
-    //    doesn't have one, you can group all files under a single "Default" class.
-    //
-    // 4. For each file in the raw report, create a `model.CodeFile` and populate its
-    //    `Lines` slice by reading the source file and merging coverage data.
-    //
-    // 5. Aggregate metrics up from Line -> CodeFile -> Class -> Assembly.
-    // ==========================================================================================
-	
-    slog.Info("Processing YourFormat file...")
-    // Your implementation here...
-    
+// ...
+func (p *yourFormatProcessor) Process(report *YourFormatRoot) (assemblies []model.Assembly, /*...*/) {
+    // Main translation logic here...
 	return nil, nil, nil // Placeholder
 }
 ```
 
-#### Step 5: Write Tests
+#### Step 5: Register the New Parser
+
+To make the application aware of your new parser, you must add it to the `ParserFactory` in the application's entrypoint.
+
+Navigate to `cmd/main.go` and find the `run()` function. Inside, locate the `parser.NewParserFactory` call and add an instance of your new parser to the list.
+
+```go
+// in: cmd/main.go
+
+// ... imports
+import (
+    // ... other imports
+    "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/yourformat" // 1. Import your new package
+)
+
+func run() error {
+    // ...
+    // 2. Create all desired parsers and the factory that holds them.
+	parserFactory := parser.NewParserFactory(
+		cobertura.NewCoberturaParser(defaultFileReader),
+		gocover.NewGoCoverParser(defaultFileReader),
+        yourformat.NewYourFormatParser(defaultFileReader), // 2. Add your new parser here
+	)
+    // ...
+}
+```
+
+#### Step 6: Write Tests
 
 Create a `_test.go` file for your parser. Add sample report files to a `testdata` directory and write tests that parse them and assert that the resulting `model` structs are populated correctly. Refer to `internal/parser/cobertura/processing_test.go` for a comprehensive example.

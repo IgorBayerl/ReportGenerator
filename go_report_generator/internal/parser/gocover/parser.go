@@ -47,11 +47,6 @@ func NewGoCoverParser(fileReader FileReader) parser.IParser {
 	}
 }
 
-// init registers this parser with the central factory.
-func init() {
-	parser.RegisterParser(NewGoCoverParser(&DefaultFileReader{}))
-}
-
 // Name returns the unique, human-readable name of the parser.
 func (p *GoCoverParser) Name() string {
 	return "GoCover"

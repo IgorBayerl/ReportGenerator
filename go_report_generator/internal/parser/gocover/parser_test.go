@@ -11,14 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/defaultformatter"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	// Add blank imports to register the necessary formatters for this test.
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/default"
-	_ "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
 )
 
 // MockFileInfo implements fs.FileInfo for testing.
@@ -111,6 +110,7 @@ type mockParserConfig struct {
 	fileFilter     filtering.IFilter
 	settings       *settings.Settings
 	logger         *slog.Logger
+	langFactory    *language.ProcessorFactory
 }
 
 func (m *mockParserConfig) SourceDirectories() []string        { return m.srcDirs }
@@ -119,9 +119,19 @@ func (m *mockParserConfig) ClassFilters() filtering.IFilter    { return m.classF
 func (m *mockParserConfig) FileFilters() filtering.IFilter     { return m.fileFilter }
 func (m *mockParserConfig) Settings() *settings.Settings       { return m.settings }
 func (m *mockParserConfig) Logger() *slog.Logger               { return m.logger }
+func (m *mockParserConfig) LanguageProcessorFactory() *language.ProcessorFactory {
+	return m.langFactory
+}
 
 func newTestConfig() *mockParserConfig {
 	noFilter, _ := filtering.NewDefaultFilter(nil)
+
+	// Create a language factory with the processors needed for this test.
+	langFactory := language.NewProcessorFactory(
+		defaultformatter.NewDefaultProcessor(),
+		golang.NewGoProcessor(),
+	)
+
 	return &mockParserConfig{
 		srcDirs:        []string{"/project/src"},
 		assemblyFilter: noFilter,
@@ -129,13 +139,11 @@ func newTestConfig() *mockParserConfig {
 		fileFilter:     noFilter,
 		settings:       settings.NewSettings(),
 		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		langFactory:    langFactory,
 	}
 }
 
 func TestGoCoverParser_Parse_Success(t *testing.T) {
-	// *** FIX: More realistic coverage profile for the Multiply function ***
-	// It's broken into three statement blocks, simulating a real test run
-	// where the `if` is true, but the `return 0` is not executed.
 	coverProfileContent := `mode: set
 calculator/calculator.go:4.2,4.13 1 1
 calculator/calculator.go:8.2,8.13 1 1

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
@@ -38,6 +39,7 @@ type ReportConfiguration struct {
 	VLevelValid                   bool
 	App                           *settings.Settings
 	logr                          *slog.Logger
+	LangFactory                   *language.ProcessorFactory
 }
 
 // All accessor methods remain the same.
@@ -65,6 +67,9 @@ func (rc *ReportConfiguration) IsVerbosityLevelValid() bool            { return 
 func (rc *ReportConfiguration) Settings() *settings.Settings           { return rc.App }
 
 func (rc *ReportConfiguration) Logger() *slog.Logger { return rc.logr }
+func (rc *ReportConfiguration) LanguageProcessorFactory() *language.ProcessorFactory {
+	return rc.LangFactory
+}
 
 // --- Functional Options Pattern Implementation ---
 
@@ -230,6 +235,15 @@ func WithFilters(
 			return fmt.Errorf("failed to create risk hotspot class filter: %w", err)
 		}
 
+		return nil
+	}
+}
+
+func WithLanguageProcessorFactory(factory *language.ProcessorFactory) Option {
+	return func(c *ReportConfiguration) error {
+		if factory != nil {
+			c.LangFactory = factory
+		}
 		return nil
 	}
 }

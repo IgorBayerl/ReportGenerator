@@ -1,4 +1,4 @@
-package defaultFormatter
+package defaultformatter
 
 import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
@@ -9,11 +9,6 @@ import (
 // It serves as a fallback for languages that are not explicitly handled,
 // performing no special name formatting or filtering and supporting no metrics.
 type DefaultProcessor struct{}
-
-func init() {
-	// Register this default processor with the central factory.
-	language.RegisterProcessor(NewDefaultProcessor())
-}
 
 // NewDefaultProcessor creates a new, stateless DefaultProcessor.
 func NewDefaultProcessor() language.Processor {

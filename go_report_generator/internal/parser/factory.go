@@ -2,24 +2,23 @@ package parser
 
 import "fmt"
 
-var registeredParsers []IParser
-
-// RegisterParser adds a parser to the list of available parsers.
-// This should be called by each parser implementation in its init() function.
-func RegisterParser(p IParser) {
-	registeredParsers = append(registeredParsers, p)
+// ParserFactory holds a list of available parsers and can find one for a given file.
+type ParserFactory struct {
+	parsers []IParser
 }
 
-// GetParsers returns all registered parsers.
-// (May not be needed externally, but useful for debugging or dynamic selection).
-func GetParsers() []IParser {
-	return registeredParsers
+// NewParserFactory creates a new factory with a specific list of parsers.
+// The parsers are provided explicitly, removing the need for global registration.
+func NewParserFactory(parsers ...IParser) *ParserFactory {
+	return &ParserFactory{
+		parsers: parsers,
+	}
 }
 
-// FindParserForFile attempts to find a suitable parser for the given file.
-// It iterates through registered parsers and calls their SupportsFile method.
-func FindParserForFile(filePath string) (IParser, error) {
-	for _, p := range registeredParsers {
+// FindParserForFile attempts to find a suitable parser for the given file
+// from the list of parsers the factory was configured with.
+func (f *ParserFactory) FindParserForFile(filePath string) (IParser, error) {
+	for _, p := range f.parsers {
 		if p.SupportsFile(filePath) {
 			return p, nil
 		}

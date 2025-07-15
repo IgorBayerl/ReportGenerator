@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
@@ -26,6 +27,7 @@ type ParserConfig interface {
 	FileFilters() filtering.IFilter
 	Settings() *settings.Settings
 	Logger() *slog.Logger
+	LanguageProcessorFactory() *language.ProcessorFactory
 }
 
 type IParser interface {

@@ -20,10 +20,6 @@ var (
 // CSharpProcessor implements the language.Processor interface for C#.
 type CSharpProcessor struct{}
 
-func init() {
-	language.RegisterProcessor(NewCSharpProcessor())
-}
-
 func NewCSharpProcessor() language.Processor {
 	return &CSharpProcessor{}
 }

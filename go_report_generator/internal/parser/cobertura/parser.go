@@ -42,10 +42,6 @@ func NewCoberturaParser(fileReader FileReader) parser.IParser {
 	}
 }
 
-func init() {
-	parser.RegisterParser(NewCoberturaParser(&DefaultFileReader{}))
-}
-
 func (cp *CoberturaParser) Name() string {
 	return "Cobertura"
 }

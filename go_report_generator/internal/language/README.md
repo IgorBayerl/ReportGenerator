@@ -16,7 +16,7 @@ A language processor has two main responsibilities: it acts as a **beautician** 
 *   **Filters out** compiler-generated "noise" classes that shouldn't appear in the report.
 *   **Standardizes** display names (e.g., converting C# generics like `List\`1` into `List<T>`).
 *   **Categorizes** code elements based on language conventions (e.g., identifying a method as a `get_` or `set_` property accessor).
-*   **Calculates** language-specific metrics (like cyclomatic complexity) that are not present in the input coverage file.
+*   **Calculates** language-specific metrics (like cyclomatic complexity) that are not present in the an input coverage file.
 
 #### What a Processor **Does Not** Do:
 
@@ -43,7 +43,7 @@ Your new processor **must** implement the `Processor` interface defined in `inte
 
 ## Step-by-Step Guide: Creating a New Language Processor
 
-Follow this structure to create a processor for a new language (e.g., "Go").
+Follow this structure to create a processor for a new language (e.g., "Java").
 
 #### Step 1: Create the Processor Package
 
@@ -51,81 +51,63 @@ Create a new, self-contained directory inside `internal/language/`.
 
 ```
 internal/language/
-└── golang/                #<-- New directory for your processor
+└── java/                #<-- New directory for your processor
     └── processor.go       #<-- Your main processor logic will live here
 ```
 
 #### Step 2: Implement the `Processor` Interface
 
-In `processor.go`, create your processor struct and make it implement the `language.Processor` interface. This is a complete example for the Go language.
+In `processor.go`, create your processor struct and make it implement the `language.Processor` interface.
 
 ```go
-// in: internal/language/golang/processor.go
-package golang
+// in: internal/language/java/processor.go
+package java
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/fzipp/gocyclo"
 )
 
-// GoProcessor implements the language.Processor interface for Go.
-type GoProcessor struct{}
+// JavaProcessor implements the language.Processor interface for Java.
+type JavaProcessor struct{}
 
-// NewGoProcessor creates a new, stateless GoProcessor.
-func NewGoProcessor() language.Processor {
-	return &GoProcessor{}
+// NewJavaProcessor creates a new, stateless JavaProcessor.
+func NewJavaProcessor() language.Processor {
+	return &JavaProcessor{}
 }
 
-func (p *GoProcessor) Name() string { return "Go" }
-func (p *GoProcessor) Detect(filePath string) bool {
-	return strings.HasSuffix(strings.ToLower(filePath), ".go")
+func (p *JavaProcessor) Name() string { return "Java" }
+func (p *JavaProcessor) Detect(filePath string) bool {
+	// ... implementation to detect .java files
 }
-func (p *GoProcessor) GetLogicalClassName(rawClassName string) string { return rawClassName }
-func (p *GoProcessor) FormatClassName(class *model.Class) string       { return class.Name }
-func (p *GoProcessor) FormatMethodName(method *model.Method, class *model.Class) string {
-	return method.Name + method.Signature
-}
-func (p *GoProcessor) CategorizeCodeElement(method *model.Method) model.CodeElementType {
-	return model.MethodElementType
-}
-func (p *GoProcessor) IsCompilerGeneratedClass(class *model.Class) bool { return false }
-
-// CalculateCyclomaticComplexity uses the gocyclo library to analyze a Go source file.
-func (p *GoProcessor) CalculateCyclomaticComplexity(filePath string) ([]model.MethodMetric, error) {
-	stats := gocyclo.Analyze([]string{filePath}, nil)
-
-	metrics := make([]model.MethodMetric, 0, len(stats))
-	for _, s := range stats {
-		metric := model.MethodMetric{
-			Name: s.FuncName,
-			Line: s.Pos.Line,
-			Metrics: []model.Metric{
-				{
-					Name:   "Cyclomatic complexity",
-					Value:  float64(s.Complexity),
-					Status: model.StatusOk,
-				},
-			},
-		}
-		metrics = append(metrics, metric)
-	}
-	return metrics, nil
-}
+// ... implement all other interface methods
 ```
 
-#### Step 3: Register Your Processor
+#### Step 3: Register the New Processor
 
-In the same `processor.go` file, add an `init()` function to register your processor with the central factory.
+To make the application aware of your new processor, you must add it to the `ProcessorFactory` in the application's entrypoint.
+
+Navigate to `cmd/main.go` and find the `run()` function. Inside, locate the `language.NewProcessorFactory` call and add an instance of your new processor to the list.
 
 ```go
-// in: internal/language/golang/processor.go
+// in: cmd/main.go
 
-func init() {
-	// This line automatically tells the application about your new processor
-	language.RegisterProcessor(NewGoProcessor())
+// ... imports
+import (
+    // ... other imports
+    "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/java" // 1. Import your new package
+)
+
+func run() error {
+    // ...
+    // 1. Create all desired language processors and the factory that holds them.
+	langFactory := language.NewProcessorFactory(
+		defaultformatter.NewDefaultProcessor(),
+		csharp.NewCSharpProcessor(),
+		golang.NewGoProcessor(),
+        java.NewJavaProcessor(), // 2. Add your new processor here
+	)
+    // ...
 }
 ```
+With these changes, the factory will now be able to detect and use your `JavaProcessor` for any `.java` files referenced in a coverage report.

@@ -99,7 +99,7 @@ func (o *processingOrchestrator) processPackage(pkgXML PackageXML) (*model.Assem
 func (o *processingOrchestrator) groupClassesByLogicalName(classes []ClassXML) map[string][]ClassXML {
 	grouped := make(map[string][]ClassXML)
 	for _, classXML := range classes {
-		formatter := language.FindProcessorForFile(classXML.Filename)
+		formatter := o.config.LanguageProcessorFactory().FindProcessorForFile(classXML.Filename)
 		logicalName := formatter.GetLogicalClassName(classXML.Name)
 		grouped[logicalName] = append(grouped[logicalName], classXML)
 	}
@@ -110,8 +110,7 @@ func (o *processingOrchestrator) processClassGroup(logicalClassName string, clas
 	if len(classXMLs) == 0 {
 		return nil, nil
 	}
-
-	primaryFormatter := language.FindProcessorForFile(classXMLs[0].Filename)
+	primaryFormatter := o.config.LanguageProcessorFactory().FindProcessorForFile(classXMLs[0].Filename)
 
 	if !o.config.ClassFilters().IsElementIncludedInReport(logicalClassName) {
 		return nil, fmt.Errorf("class '%s' is excluded by filters", logicalClassName)
@@ -134,7 +133,7 @@ func (o *processingOrchestrator) processClassGroup(logicalClassName string, clas
 	xmlFragmentsByFile := o.groupClassFragmentsByFile(classXMLs)
 
 	for filePath, fragmentsForFile := range xmlFragmentsByFile {
-		fileFormatter := language.FindProcessorForFile(filePath)
+		fileFormatter := o.config.LanguageProcessorFactory().FindProcessorForFile(filePath)
 		codeFile, methodsInFile, err := o.processFileForClass(filePath, classModel, fragmentsForFile, fileFormatter)
 		if err != nil {
 			o.logger.Warn("Failed to process file for class, skipping file.", "file", filePath, "class", classModel.DisplayName, "error", err)

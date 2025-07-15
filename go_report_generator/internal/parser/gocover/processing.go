@@ -194,7 +194,7 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 		o.logger.Warn("Failed to parse Go source for functions, method metrics will be unavailable.", "file", resolvedPath, "error", err)
 	}
 
-	langProcessor := language.FindProcessorForFile(filePath)
+	langProcessor := o.config.LanguageProcessorFactory().FindProcessorForFile(filePath)
 	complexityMetrics, err := langProcessor.CalculateCyclomaticComplexity(resolvedPath)
 	if err != nil && !errors.Is(err, language.ErrNotSupported) {
 		o.logger.Warn("Failed to calculate cyclomatic complexity", "file", resolvedPath, "error", err)
@@ -324,7 +324,6 @@ func (o *processingOrchestrator) processFile(filePath string, blocks []GoCoverPr
 
 	return codeFile, methods
 }
-
 
 func (o *processingOrchestrator) populateStandardGoMethodMetrics(method *model.Method) {
 	method.MethodMetrics = []model.MethodMetric{}

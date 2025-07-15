@@ -11,11 +11,6 @@ import (
 // GoProcessor implements the language.Processor interface for Go.
 type GoProcessor struct{}
 
-func init() {
-	// Register this processor with the central factory via its init function.
-	language.RegisterProcessor(NewGoProcessor())
-}
-
 // NewGoProcessor creates a new, stateless GoProcessor.
 func NewGoProcessor() language.Processor {
 	return &GoProcessor{}
