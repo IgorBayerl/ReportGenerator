@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter"
 )
 
 type HtmlReportBuilder struct {
 	OutputDir     string
-	ReportContext reporting.IReportContext
+	ReportContext reporter.IBuilderContext
 
 	// Cached data for reuse across page generations
 	angularCssFile                     string
@@ -44,7 +44,7 @@ type HtmlReportBuilder struct {
 	combinedAngularJsFile string // To store "reportgenerator.combined.js"
 }
 
-func NewHtmlReportBuilder(outputDir string, reportCtx reporting.IReportContext) *HtmlReportBuilder {
+func NewHtmlReportBuilder(outputDir string, reportCtx reporter.IBuilderContext) *HtmlReportBuilder {
 	return &HtmlReportBuilder{
 		OutputDir:                  outputDir,
 		ReportContext:              reportCtx,

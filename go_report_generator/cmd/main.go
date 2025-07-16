@@ -17,7 +17,7 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reportconfig"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporting"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/reporter"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 
 	// reporters
@@ -245,7 +245,7 @@ func parseAndMergeReports(logger *slog.Logger, reportConfig *reportconfig.Report
 	return summaryResult, nil
 }
 
-func generateReports(reportCtx reporting.IReportContext, summaryResult *model.SummaryResult) error {
+func generateReports(reportCtx reporter.IBuilderContext, summaryResult *model.SummaryResult) error {
 	logger := reportCtx.Logger()
 	reportConfig := reportCtx.ReportConfiguration()
 	outputDir := reportConfig.TargetDirectory()
@@ -335,7 +335,7 @@ func run() error {
 		return err
 	}
 
-	reportCtx := reporting.NewReportContext(reportConfig, settings.NewSettings(), logger)
+	reportCtx := reporter.NewBuilderContext(reportConfig, settings.NewSettings(), logger)
 	return generateReports(reportCtx, summaryResult)
 }
 
