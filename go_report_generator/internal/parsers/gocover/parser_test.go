@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/defaultformatter"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 

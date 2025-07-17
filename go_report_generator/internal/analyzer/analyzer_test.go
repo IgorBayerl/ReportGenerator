@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/analyzer"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/filtering"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

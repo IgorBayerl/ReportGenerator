@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 

@@ -9,9 +9,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/filtering"
 )
 
 // MergerConfig defines the necessary configuration for the merging process.
