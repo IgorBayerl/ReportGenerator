@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
-// CoberturaParser implements the parser.IParser interface for Cobertura XML reports.
+// CoberturaParser implements the parsers.IParser interface for Cobertura XML reports.
 type CoberturaParser struct {
 	fileReader FileReader // Injected dependency
 }
@@ -36,7 +36,7 @@ func (dfr *DefaultFileReader) Stat(name string) (fs.FileInfo, error) {
 	return os.Stat(name)
 }
 
-func NewCoberturaParser(fileReader FileReader) parser.IParser {
+func NewCoberturaParser(fileReader FileReader) parsers.IParser {
 	return &CoberturaParser{
 		fileReader: fileReader,
 	}
@@ -71,10 +71,10 @@ func (cp *CoberturaParser) SupportsFile(filePath string) bool {
 	return false
 }
 
-// Parse is the main entry point for the Cobertura parser. It unmarshals the XML
+// Parse is the main entry point for the Cobertura parsers. It unmarshals the XML
 // and delegates the complex processing logic to the processingOrchestrator, which
 // handles per-file language detection and formatting.
-func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
+func (cp *CoberturaParser) Parse(filePath string, config parsers.ParserConfig) (*parsers.ParserResult, error) {
 	logger := config.Logger().With(slog.String("parser", cp.Name()), slog.String("file", filePath))
 
 	rawReport, sourceDirsFromXML, err := cp.loadAndUnmarshalCoberturaXML(filePath)
@@ -95,7 +95,7 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 
 	timestamp := cp.getReportTimestamp(rawReport.Timestamp, logger)
 
-	return &parser.ParserResult{
+	return &parsers.ParserResult{
 		Assemblies:             assemblies,
 		SourceDirectories:      sourceDirsFromXML,
 		SupportsBranchCoverage: detectedBranchSupport,
@@ -109,7 +109,7 @@ func (cp *CoberturaParser) Parse(filePath string, config parser.ParserConfig) (*
 
 // getEffectiveSourceDirs combines source directories from the configuration (CLI)
 // and from the XML file's <sources> tag to create a comprehensive list of search paths.
-func (cp *CoberturaParser) getEffectiveSourceDirs(config parser.ParserConfig, sourceDirsFromXML []string) []string {
+func (cp *CoberturaParser) getEffectiveSourceDirs(config parsers.ParserConfig, sourceDirsFromXML []string) []string {
 	sourceDirsSet := make(map[string]struct{})
 
 	for _, dir := range config.SourceDirectories() {

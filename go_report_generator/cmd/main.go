@@ -32,9 +32,9 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language/golang"
 
 	// parsers
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/cobertura"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/gocover"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/cobertura"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/gocover"
 )
 
 type cliFlags struct {
@@ -192,8 +192,8 @@ func createReportConfiguration(flags *cliFlags, verbosity logging.VerbosityLevel
 	)
 }
 
-func parseAndMergeReports(logger *slog.Logger, reportConfig *reportconfig.ReportConfiguration, parserFactory *parser.ParserFactory) (*model.SummaryResult, error) {
-	var parserResults []*parser.ParserResult
+func parseAndMergeReports(logger *slog.Logger, reportConfig *reportconfig.ReportConfiguration, parserFactory *parsers.ParserFactory) (*model.SummaryResult, error) {
+	var parserResults []*parsers.ParserResult
 	var parserErrors []string
 
 	for _, reportFile := range reportConfig.ReportFiles() {
@@ -308,7 +308,7 @@ func run() error {
 	// 2. Create all desired parsers and the factory that holds them.
 	//    The fileReader dependency is created here once.
 	defaultFileReader := &cobertura.DefaultFileReader{}
-	parserFactory := parser.NewParserFactory(
+	parserFactory := parsers.NewParserFactory(
 		cobertura.NewCoberturaParser(defaultFileReader),
 		gocover.NewGoCoverParser(defaultFileReader),
 	)

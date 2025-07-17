@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 	goCoverLineRegex = regexp.MustCompile(`^(.+):(\d+)\.(\d+),(\d+)\.(\d+)\s(\d+)\s(\d+)$`)
 )
 
-// GoCoverParser implements the parser.IParser interface for Go coverage reports.
+// GoCoverParser implements the parsers.IParser interface for Go coverage reports.
 type GoCoverParser struct {
 	fileReader FileReader // Injected dependency
 }
@@ -41,13 +41,13 @@ func (dfr *DefaultFileReader) Stat(name string) (fs.FileInfo, error) {
 }
 
 // NewGoCoverParser creates a new parser instance.
-func NewGoCoverParser(fileReader FileReader) parser.IParser {
+func NewGoCoverParser(fileReader FileReader) parsers.IParser {
 	return &GoCoverParser{
 		fileReader: fileReader,
 	}
 }
 
-// Name returns the unique, human-readable name of the parser.
+// Name returns the unique, human-readable name of the parsers.
 func (p *GoCoverParser) Name() string {
 	return "GoCover"
 }
@@ -71,7 +71,7 @@ func (p *GoCoverParser) SupportsFile(filePath string) bool {
 
 // Parse reads the entire Go coverage report, transforms it into `GoCoverProfileBlock`s,
 // and then delegates the complex processing to the processingOrchestrator.
-func (p *GoCoverParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
+func (p *GoCoverParser) Parse(filePath string, config parsers.ParserConfig) (*parsers.ParserResult, error) {
 	logger := config.Logger().With(slog.String("parser", p.Name()), slog.String("file", filePath))
 
 	profileBlocks, err := p.loadAndParseGoCoverFile(filePath)
@@ -86,7 +86,7 @@ func (p *GoCoverParser) Parse(filePath string, config parser.ParserConfig) (*par
 		return nil, fmt.Errorf("failed to process Go coverage blocks: %w", err)
 	}
 
-	return &parser.ParserResult{
+	return &parsers.ParserResult{
 		Assemblies:             assemblies,
 		SourceDirectories:      []string{}, // Go cover files don't list source directories
 		SupportsBranchCoverage: false,

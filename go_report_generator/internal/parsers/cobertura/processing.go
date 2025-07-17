@@ -11,7 +11,7 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
@@ -28,7 +28,7 @@ type fileProcessingMetrics struct {
 
 type processingOrchestrator struct {
 	fileReader                        FileReader
-	config                            parser.ParserConfig
+	config                            parsers.ParserConfig
 	sourceDirs                        []string
 	uniqueFilePathsForGrandTotalLines map[string]int
 	processedAssemblyFiles            map[string]struct{}
@@ -38,7 +38,7 @@ type processingOrchestrator struct {
 
 func newProcessingOrchestrator(
 	fileReader FileReader,
-	config parser.ParserConfig,
+	config parsers.ParserConfig,
 	sourceDirs []string,
 	logger *slog.Logger,
 ) *processingOrchestrator {

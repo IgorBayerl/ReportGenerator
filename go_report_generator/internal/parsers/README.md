@@ -26,13 +26,13 @@ The application framework handles the rest:
 
 ## 2. The `IParser` Interface: Your Contract
 
-This is the most important part of the parser core. Your new parser **must** implement this interface, which is defined in `internal/parser/parser_config.go`. It is the bridge between the application framework and your specific implementation.
+This is the most important part of the parser core. Your new parser **must** implement this interface, which is defined in `internal/parsers/parser_config.go`. It is the bridge between the application framework and your specific implementation.
 
 | Method | Responsibility | Implementation Notes |
 | :--- | :--- | :--- |
 | **`Name() string`** | Return the unique, human-readable name of your parser (e.g., "GoCover", "JaCoCo"). | This name is used in logs and potentially in the UI, so make it descriptive. |
 | **`SupportsFile(filePath string) bool`** | Quickly and efficiently determine if your parser can handle the given file. | **This check must be fast.** The factory calls this on every available parser for every input file. Do not read the entire file here. <br> • **For XML:** Read just enough to find the root element name. <br> • **For JSON:** Check for a unique top-level key. <br> • **For line-based formats:** Check if the first line contains a specific "magic string" (e.g., `mode: set` for Go coverage). |
-| **`Parse(filePath string, config ParserConfig) (*ParserResult, error)`** | Read the entire report file and perform the full translation into the `parser.ParserResult` struct. | This is where the main logic resides. You have access to filters (`config.FileFilters()`, etc.) to exclude data as you process it. This method should be **stateless**—all necessary context comes from the `filePath` and `config` arguments. This design allows the application to run multiple `Parse` operations in parallel in the future. |
+| **`Parse(filePath string, config ParserConfig) (*ParserResult, error)`** | Read the entire report file and perform the full translation into the `parsers.ParserResult` struct. | This is where the main logic resides. You have access to filters (`config.FileFilters()`, etc.) to exclude data as you process it. This method should be **stateless**—all necessary context comes from the `filePath` and `config` arguments. This design allows the application to run multiple `Parse` operations in parallel in the future. |
 
 ## 3. Core Principles & Best Practices
 
@@ -40,7 +40,7 @@ Follow these principles to ensure your parser is robust, testable, and aligns wi
 
 *   **Be Stateless and Parallelizable:** A parser instance should not hold any state related to a specific `Parse` operation. All data should be passed in via arguments (`filePath`, `config`) and returned in the `ParserResult`. This ensures that a single parser instance can be safely used to parse multiple files concurrently without interference.
 
-*   **Encapsulate Your Logic:** All code and data structures specific to your parser should live within its own package (e.g., `internal/parser/yourformat/`). This includes format-specific structs, processing logic, and tests.
+*   **Encapsulate Your Logic:** All code and data structures specific to your parser should live within its own package (e.g., `internal/parsers/yourformat/`). This includes format-specific structs, processing logic, and tests.
 
 *   **Filter Early, Filter Often:** Apply the filters provided in the `ParserConfig` as you process the data. For example, if an assembly or class is excluded, don't waste time processing its files and lines. This improves performance.
 
@@ -71,10 +71,10 @@ Follow this structure to create a parser for a new format (e.g., "YourFormat").
 
 #### Step 1: Create the Parser Package
 
-Create a new, self-contained directory inside `internal/parser/`.
+Create a new, self-contained directory inside `internal/parsers/`.
 
 ```
-internal/parser/
+internal/parsers/
 └── yourformat/            #<-- New directory for your parser
     ├── parser.go          #<-- The public entrypoint (IParser implementation)
     ├── processing.go      #<-- The core translation logic
@@ -85,33 +85,33 @@ internal/parser/
 
 #### Step 2: Define the Input Structs (`input.go`)
 
-In `internal/parser/yourformat/input.go`, define Go structs that map directly to your input file format.
+In `internal/parsers/yourformat/input.go`, define Go structs that map directly to your input file format.
 
 ```go
-// in: internal/parser/yourformat/input.go
+// in: internal/parsers/yourformat/input.go
 package yourformat
 
 type YourFormatRoot struct { /* ... */ }
 ```
 
-#### Step 3: Implement the `IParser` Interface (`parser.go`)
+#### Step 3: Implement the `IParser` Interface (`parser_config.go`)
 
 This file is the public entrypoint. It implements `IParser`.
 
 ```go
-// in: internal/parser/yourformat/parser.go
+// in: internal/parsers/yourformat/parser.go
 package yourformat
 
 import (
 	// ... your imports
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
 )
 
 type YourFormatParser struct{
     // ... dependencies like a file reader
 }
 
-func NewYourFormatParser(/*...deps*/) parser.IParser {
+func NewYourFormatParser(/*...deps*/) parsers.IParser {
 	return &YourFormatParser{/*...*/}
 }
 
@@ -123,7 +123,7 @@ func (p *YourFormatParser) SupportsFile(filePath string) bool {
 	// ... quick check logic
 }
 
-func (p *YourFormatParser) Parse(filePath string, config parser.ParserConfig) (*parser.ParserResult, error) {
+func (p *YourFormatParser) Parse(filePath string, config parsers.ParserConfig) (*parsers.ParserResult, error) {
 	// ... main parsing and translation logic
 }
 ```
@@ -133,7 +133,7 @@ func (p *YourFormatParser) Parse(filePath string, config parser.ParserConfig) (*
 This file does the actual work of translating your format into the `model` objects.
 
 ```go
-// in: internal/parser/yourformat/processing.go
+// in: internal/parsers/yourformat/processing.go
 package yourformat
 
 // ...
@@ -147,7 +147,7 @@ func (p *yourFormatProcessor) Process(report *YourFormatRoot) (assemblies []mode
 
 To make the application aware of your new parser, you must add it to the `ParserFactory` in the application's entrypoint.
 
-Navigate to `cmd/main.go` and find the `run()` function. Inside, locate the `parser.NewParserFactory` call and add an instance of your new parser to the list.
+Navigate to `cmd/main.go` and find the `run()` function. Inside, locate the `parsers.NewParserFactory` call and add an instance of your new parser to the list.
 
 ```go
 // in: cmd/main.go
@@ -155,13 +155,13 @@ Navigate to `cmd/main.go` and find the `run()` function. Inside, locate the `par
 // ... imports
 import (
     // ... other imports
-    "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/yourformat" // 1. Import your new package
+    "github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/yourformat" // 1. Import your new package
 )
 
 func run() error {
     // ...
     // 2. Create all desired parsers and the factory that holds them.
-	parserFactory := parser.NewParserFactory(
+	parserFactory := parsers.NewParserFactory(
 		cobertura.NewCoberturaParser(defaultFileReader),
 		gocover.NewGoCoverParser(defaultFileReader),
         yourformat.NewYourFormatParser(defaultFileReader), // 2. Add your new parser here
@@ -172,4 +172,4 @@ func run() error {
 
 #### Step 6: Write Tests
 
-Create a `_test.go` file for your parser. Add sample report files to a `testdata` directory and write tests that parse them and assert that the resulting `model` structs are populated correctly. Refer to `internal/parser/cobertura/processing_test.go` for a comprehensive example.
+Create a `_test.go` file for your parsers. Add sample report files to a `testdata` directory and write tests that parse them and assert that the resulting `model` structs are populated correctly. Refer to `internal/parsers/cobertura/processing_test.go` for a comprehensive example.

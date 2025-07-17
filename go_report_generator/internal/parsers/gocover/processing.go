@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	goparser "go/parser"
+	"go/parser"
 	"go/token"
 	"log/slog"
 	"math"
@@ -13,14 +13,14 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 )
 
 // processingOrchestrator holds dependencies and state for a single parsing operation.
 type processingOrchestrator struct {
 	fileReader   FileReader
-	config       parser.ParserConfig
+	config       parsers.ParserConfig
 	assemblyName string
 	logger       *slog.Logger
 }
@@ -33,7 +33,7 @@ type parsedMethod struct {
 	EndLine     int
 }
 
-func newProcessingOrchestrator(fileReader FileReader, config parser.ParserConfig, logger *slog.Logger) *processingOrchestrator {
+func newProcessingOrchestrator(fileReader FileReader, config parsers.ParserConfig, logger *slog.Logger) *processingOrchestrator {
 	return &processingOrchestrator{
 		fileReader: fileReader,
 		config:     config,
@@ -396,7 +396,7 @@ func (o *processingOrchestrator) aggregateAssemblyMetrics(assembly *model.Assemb
 
 func parseGoSourceForFunctions(filePath string, sourceLines []string) ([]parsedMethod, error) {
 	fset := token.NewFileSet()
-	f, err := goparser.ParseFile(fset, filePath, strings.Join(sourceLines, "\n"), 0)
+	f, err := parser.ParseFile(fset, filePath, strings.Join(sourceLines, "\n"), 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Go source: %w", err)
 	}

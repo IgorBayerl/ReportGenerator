@@ -1,4 +1,4 @@
-package parser
+package parsers
 
 import (
 	"log/slog"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parser/filtering"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers/filtering"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
