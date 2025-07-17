@@ -32,8 +32,6 @@ import (
 	"strings"
 )
 
-// IFilter defines the contract for filtering elements. It provides a simple
-// interface for determining if an element should be part of a report.
 type IFilter interface {
 	// IsElementIncludedInReport determines if an element with the given name
 	// should be included in the report based on the configured filter rules.
@@ -47,17 +45,12 @@ type IFilter interface {
 	HasCustomFilters() bool
 }
 
-// DefaultFilter is the default, regex-based implementation of the IFilter interface.
-// It compiles user-provided filter strings into regular expressions for efficient matching.
 type DefaultFilter struct {
 	includeFilters []*regexp.Regexp
 	excludeFilters []*regexp.Regexp
 	hasCustom      bool
 }
 
-// NewDefaultFilter creates a new IFilter from a slice of filter strings.
-// Each string in the `filters` slice must start with '+' for inclusion or '-' for exclusion.
-//
 // The optional `osIndependantPathSeparator` parameter, if true, treats both `/` and `\`
 // as path separators in the patterns, making file filters work seamlessly across
 // different operating systems.
@@ -111,7 +104,6 @@ func NewDefaultFilter(filters []string, osIndependantPathSeparator ...bool) (IFi
 	return df, nil
 }
 
-// IsElementIncludedInReport checks if the given name matches the filter rules.
 // An element is included if it matches at least one include filter and no exclude filters.
 func (df *DefaultFilter) IsElementIncludedInReport(name string) bool {
 	// Exclusion filters always take precedence.
@@ -133,7 +125,6 @@ func (df *DefaultFilter) IsElementIncludedInReport(name string) bool {
 	return false
 }
 
-// HasCustomFilters returns true if any include or exclude filters were specified by the user.
 func (df *DefaultFilter) HasCustomFilters() bool {
 	return df.hasCustom
 }

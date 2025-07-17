@@ -20,12 +20,11 @@ var (
 	goCoverLineRegex = regexp.MustCompile(`^(.+):(\d+)\.(\d+),(\d+)\.(\d+)\s(\d+)\s(\d+)$`)
 )
 
-// GoCoverParser implements the parsers.IParser interface for Go coverage reports.
+// GoCoverParser implements the parsers.IParserinterface for Go coverage reports.
 type GoCoverParser struct {
-	fileReader FileReader // Injected dependency
+	fileReader filereader.Reader // Injected dependency
 }
 
-// DefaultFileReader is the production implementation of the FileReader interface.
 type DefaultFileReader struct{}
 
 func (dfr *DefaultFileReader) ReadFile(path string) ([]string, error) {
@@ -41,7 +40,7 @@ func (dfr *DefaultFileReader) Stat(name string) (fs.FileInfo, error) {
 }
 
 // NewGoCoverParser creates a new parser instance.
-func NewGoCoverParser(fileReader FileReader) parsers.IParser {
+func NewGoCoverParser(fileReader filereader.Reader) parsers.IParser {
 	return &GoCoverParser{
 		fileReader: fileReader,
 	}

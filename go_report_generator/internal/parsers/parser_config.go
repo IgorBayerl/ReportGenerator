@@ -10,7 +10,7 @@ import (
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/settings"
 )
 
-// ParserResult holds the processed data from a single coverage report.
+// holds the processed data from a single coverage report.
 type ParserResult struct {
 	Assemblies             []model.Assembly
 	SourceDirectories      []string

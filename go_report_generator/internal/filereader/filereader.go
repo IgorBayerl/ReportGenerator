@@ -4,13 +4,19 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
 	"golang.org/x/text/transform"
 )
 
-// CountLinesInFile counts the number of physical lines in a file.
+type Reader interface {
+	ReadFile(path string) ([]string, error)
+	CountLines(path string) (int, error)
+	Stat(name string) (fs.FileInfo, error)
+}
+
 func CountLinesInFile(filePath string) (int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -26,7 +32,6 @@ func CountLinesInFile(filePath string) (int, error) {
 	return lineCount, scanner.Err()
 }
 
-// ReadLinesInFile reads all lines from a file and returns them as a slice of strings.
 func ReadLinesInFile(filePath string) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -52,7 +57,7 @@ func ReadLinesInFile(filePath string) ([]string, error) {
 	}
 
 	var lines []string
-	scanner := bufio.NewScanner(reader) // Use the potentially transformed reader
+	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}

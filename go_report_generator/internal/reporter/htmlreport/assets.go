@@ -1,46 +1,49 @@
 package htmlreport
 
 import (
-	"fmt" // Keep for fmt.Errorf
+	"fmt"
 	"io"
 	"io/fs"
-	"log/slog" // Add slog
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/utils"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/assets"
 	"golang.org/x/net/html"
 )
 
-var (
-	assetsDir             = filepath.Join(utils.ProjectRoot(), "assets", "htmlreport")
-	angularDistSourcePath = filepath.Join(utils.ProjectRoot(), "angular_frontend_spa", "dist")
-)
-
 // initializeAssets initializes and sets up all required assets for the HTML report.
-// It copies static and Angular assets to the output directory and parses the Angular
-// index.html to extract critical CSS and JavaScript file references.
+// It copies static and Angular assets from the embedded filesystem to the output directory
+// and parses the embedded Angular index.html to extract critical CSS and JavaScript file references.
 // Returns an error if any critical operation fails.
 func (b *HtmlReportBuilder) initializeAssets() error {
+	// Copy static assets (like custom.css) from the embedded FS to the output directory.
 	if err := b.copyStaticAssets(); err != nil {
 		return fmt.Errorf("failed to copy static assets: %w", err)
 	}
-	// copyAngularAssets ensures all files from angular_frontend_spa/dist are in b.OutputDir
+
+	// Copy the entire compiled Angular app from the embedded FS to the output directory.
 	if err := b.copyAngularAssets(b.OutputDir); err != nil {
 		return fmt.Errorf("failed to copy angular assets: %w", err)
 	}
 
-	// parseAngularIndexHTML gets the original module filenames
-	// These are relative to the root of the copied 'dist' folder (i.e., b.OutputDir)
-	cssFile, runtimeJsFile, polyfillsJsFile, mainJsFile, err := b.parseAngularIndexHTML(filepath.Join(b.OutputDir, "index.html"))
+	// Get the embedded Angular filesystem to read from it directly.
+    angularFS, err := assets.AngularDist()
 	if err != nil {
-		// If parsing fails, it might be because index.html wasn't copied or is unexpected.
-		// Try parsing from the source dist path as a fallback for getting filenames.
-		cssFile, runtimeJsFile, polyfillsJsFile, mainJsFile, err = b.parseAngularIndexHTML(filepath.Join(angularDistSourcePath, "index.html"))
-		if err != nil {
-			return fmt.Errorf("failed to parse Angular index.html from both output and source: %w", err)
-		}
+		return fmt.Errorf("could not get embedded angular assets: %w", err)
+	}
+
+	// Open and parse the embedded index.html to discover the hashed filenames of the JS/CSS modules.
+	indexFileReader, err := angularFS.Open("index.html")
+	if err != nil {
+		return fmt.Errorf("failed to open embedded index.html: %w", err)
+	}
+	defer indexFileReader.Close()
+
+	cssFile, runtimeJsFile, polyfillsJsFile, mainJsFile, err := b.parseAngularIndexHTML(indexFileReader)
+	if err != nil {
+		return fmt.Errorf("failed to parse embedded Angular index.html: %w", err)
 	}
 
 	if cssFile == "" || runtimeJsFile == "" || mainJsFile == "" {
@@ -49,46 +52,44 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 
 	b.angularCssFile = cssFile
 
-	// Concatenate JS files
+	// Combine the discovered JS files into a single file for better performance.
 	var jsBuilder strings.Builder
 
-	// Runtime JS
-	runtimePath := filepath.Join(b.OutputDir, runtimeJsFile)
-	content, err := os.ReadFile(runtimePath)
+	// Read Runtime JS from the embedded FS
+	runtimeContent, err := fs.ReadFile(angularFS, runtimeJsFile)
 	if err != nil {
-		return fmt.Errorf("failed to read Angular runtime JS file %s: %w", runtimePath, err)
+		return fmt.Errorf("failed to read embedded Angular runtime JS file %s: %w", runtimeJsFile, err)
 	}
-	jsBuilder.Write(content)
-	jsBuilder.WriteString(";\n\n") // Add semicolon and newline for safety
+	jsBuilder.Write(runtimeContent)
+	jsBuilder.WriteString(";\n\n") // Add semicolon for safe concatenation
 
-	// Polyfills JS (optional)
+	// Read Polyfills JS from the embedded FS (if it exists)
 	if polyfillsJsFile != "" {
-		polyfillsPath := filepath.Join(b.OutputDir, polyfillsJsFile)
-		content, err = os.ReadFile(polyfillsPath)
+		polyfillsContent, err := fs.ReadFile(angularFS, polyfillsJsFile)
 		if err != nil {
-			return fmt.Errorf("failed to read Angular polyfills JS file %s: %w", polyfillsPath, err)
+			return fmt.Errorf("failed to read embedded Angular polyfills JS file %s: %w", polyfillsJsFile, err)
 		}
-		jsBuilder.Write(content)
+		jsBuilder.Write(polyfillsContent)
 		jsBuilder.WriteString(";\n\n")
 	}
 
-	// Main JS
-	mainPath := filepath.Join(b.OutputDir, mainJsFile)
-	content, err = os.ReadFile(mainPath)
+	// Read Main JS from the embedded FS
+	mainContent, err := fs.ReadFile(angularFS, mainJsFile)
 	if err != nil {
-		return fmt.Errorf("failed to read Angular main JS file %s: %w", mainPath, err)
+		return fmt.Errorf("failed to read embedded Angular main JS file %s: %w", mainJsFile, err)
 	}
-	jsBuilder.Write(content)
+	jsBuilder.Write(mainContent)
 	jsBuilder.WriteString(";\n")
 
-	b.combinedAngularJsFile = "reportgenerator.combined.js" // Or any name you prefer
+	// Write the combined JavaScript to a file in the output directory on the real disk.
+	b.combinedAngularJsFile = "reportgenerator.combined.js"
 	combinedJsPath := filepath.Join(b.OutputDir, b.combinedAngularJsFile)
 	err = os.WriteFile(combinedJsPath, []byte(jsBuilder.String()), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write combined Angular JS file %s: %w", combinedJsPath, err)
 	}
 
-	// We no longer need to store individual JS module filenames for script tags
+	// Clear out the individual JS file names as they are no longer needed for the template.
 	b.angularRuntimeJsFile = ""
 	b.angularPolyfillsJsFile = ""
 	b.angularMainJsFile = ""
@@ -96,11 +97,14 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 	return nil
 }
 
-// copyStaticAssets copies static asset files from the embedded/source assets directory
-// to the report's output directory. It handles CSS, JavaScript, and other static files
-// required by the HTML reports. It also combines custom CSS files into a single report.css.
-// Returns an error if any critical file operation fails.
+// copyStaticAssets copies static asset files from the embedded filesystem
+// to the report's output directory. It also combines custom CSS files into a single report.css.
 func (b *HtmlReportBuilder) copyStaticAssets() error {
+	angularComplementsFS, err := assets.AngularComplementaryAssets()
+	if err != nil {
+		return fmt.Errorf("could not get embedded angular assets: %w", err)
+	}
+
 	filesToCopy := []string{
 		"custom.css",
 		"custom.js",
@@ -115,63 +119,40 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 	}
 
 	for _, fileName := range filesToCopy {
-		srcPath := filepath.Join(assetsDir, fileName)
-		dstPath := filepath.Join(b.OutputDir, fileName)
+		destinationPath := filepath.Join(b.OutputDir, fileName)
 
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-			return fmt.Errorf("failed to create directory for asset %s: %w", dstPath, err)
-		}
-
-		srcFile, err := os.Open(srcPath)
+		// Read the file content from the embedded filesystem.
+		content, err := fs.ReadFile(angularComplementsFS, fileName)
 		if err != nil {
-			slog.Warn(
-				"Failed to open source asset, skipping",
-				"asset", fileName,
-				"path", srcPath,
-				"error", err,
-			)
+			// It's okay to warn and skip if a non-critical asset is missing.
+			slog.Warn("Failed to read embedded asset, skipping", "asset", fileName, "error", err)
 			continue
 		}
-		defer srcFile.Close()
 
-		dstFile, err := os.Create(dstPath)
-		if err != nil {
-			return fmt.Errorf("failed to create destination asset %s: %w", dstPath, err)
-		}
-		defer dstFile.Close()
-
-		if _, err := io.Copy(dstFile, srcFile); err != nil {
-			return fmt.Errorf("failed to copy asset from %s to %s: %w", srcPath, dstPath, err)
+		// Write the content to the destination file on the real disk.
+		if err := os.WriteFile(destinationPath, content, 0644); err != nil {
+			return fmt.Errorf("failed to write asset %s to output directory: %w", destinationPath, err)
 		}
 	}
 
-	customCSSBytes, err := os.ReadFile(filepath.Join(assetsDir, "custom.css"))
+	// Combine custom.css and custom_dark.css into a single report.css file.
+	customCSSBytes, err := fs.ReadFile(angularComplementsFS, "custom.css")
 	if err != nil {
-		slog.Warn(
-			"Failed to read custom.css for combining into report.css",
-			"error", err,
-		)
+		slog.Warn("Failed to read custom.css for combining into report.css", "error", err)
 	}
 
-	customDarkCSSBytes, err := os.ReadFile(filepath.Join(assetsDir, "custom_dark.css"))
+	customDarkCSSBytes, err := fs.ReadFile(angularComplementsFS, "custom_dark.css")
 	if err != nil {
-		slog.Warn(
-			"Failed to read custom_dark.css for combining into report.css",
-			"error", err,
-		)
+		slog.Warn("Failed to read custom_dark.css for combining into report.css", "error", err)
 	}
 
-	var combinedCSS []byte
-	if len(customCSSBytes) > 0 {
-		combinedCSS = append(combinedCSS, customCSSBytes...)
-		combinedCSS = append(combinedCSS, []byte("\n")...)
-	}
-	if len(customDarkCSSBytes) > 0 {
-		combinedCSS = append(combinedCSS, customDarkCSSBytes...)
-	}
+	var combinedCSSBuilder strings.Builder
+	combinedCSSBuilder.Write(customCSSBytes)
+	combinedCSSBuilder.WriteString("\n")
+	combinedCSSBuilder.Write(customDarkCSSBytes)
 
-	if len(combinedCSS) > 0 {
-		err = os.WriteFile(filepath.Join(b.OutputDir, "report.css"), combinedCSS, 0644)
+	if combinedCSSBuilder.Len() > 0 {
+		err = os.WriteFile(filepath.Join(b.OutputDir, "report.css"), []byte(combinedCSSBuilder.String()), 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write combined report.css: %w", err)
 		}
@@ -182,67 +163,44 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 	return nil
 }
 
-// copyAngularAssets recursively copies all files from the Angular app's dist folder
-// to the report's output directory, preserving the directory structure and file permissions.
-// Returns an error if the source directory doesn't exist or if any file operation fails.
+// copyAngularAssets recursively copies all files from the embedded Angular app's dist filesystem
+// to the report's output directory on the real disk, preserving the directory structure.
 func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
-	srcInfo, err := os.Stat(angularDistSourcePath)
+	// Get the embedded filesystem containing the compiled Angular application.
+    angularDistFS, err := assets.AngularDist()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("angular source directory %s does not exist: %w. Make sure to build the Angular app first (e.g., 'npm run build' in 'angular_frontend_spa')", angularDistSourcePath, err)
-		}
-		return fmt.Errorf("failed to stat angular source directory %s: %w", angularDistSourcePath, err)
+		return fmt.Errorf("could not get embedded angular assets: %w", err)
 	}
-	if !srcInfo.IsDir() {
-		return fmt.Errorf("angular source path %s is not a directory", angularDistSourcePath)
-	}
-
-	return filepath.WalkDir(angularDistSourcePath, func(srcPath string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return fmt.Errorf("error accessing path %s during walk: %w", srcPath, walkErr)
+	// Walk the embedded filesystem and copy each file and directory.
+	// The root "." refers to the root of the embedded filesystem.
+	return fs.WalkDir(angularDistFS, ".", func(path string, directoryEntry fs.DirEntry, walkError error) error {
+		if walkError != nil {
+			return fmt.Errorf("error accessing path %s during walk: %w", path, walkError)
 		}
 
-		relPath, err := filepath.Rel(angularDistSourcePath, srcPath)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path for %s: %w", srcPath, err)
-		}
+		destinationPath := filepath.Join(outputDir, path)
 
-		dstPath := filepath.Join(outputDir, relPath)
-
-		if d.IsDir() {
-			if err := os.MkdirAll(dstPath, 0755); err != nil {
-				return fmt.Errorf("failed to create directory %s: %w", dstPath, err)
+		if directoryEntry.IsDir() {
+			// If it's a directory, create it on the real disk.
+			if err := os.MkdirAll(destinationPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", destinationPath, err)
 			}
 		} else {
-			srcFile, err := os.Open(srcPath)
+			// If it's a file, read it from the embedded FS and write it to the real disk.
+			sourceFile, err := angularDistFS.Open(path)
 			if err != nil {
-				return fmt.Errorf("failed to open source file %s: %w", srcPath, err)
+				return fmt.Errorf("failed to open embedded file %s: %w", path, err)
 			}
-			defer srcFile.Close()
+			defer sourceFile.Close()
 
-			if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-				return fmt.Errorf("failed to create parent directory for %s: %w", dstPath, err)
-			}
-
-			dstFile, err := os.Create(dstPath)
+			destinationFile, err := os.Create(destinationPath)
 			if err != nil {
-				return fmt.Errorf("failed to create destination file %s: %w", dstPath, err)
+				return fmt.Errorf("failed to create destination file %s: %w", destinationPath, err)
 			}
-			defer dstFile.Close()
+			defer destinationFile.Close()
 
-			if _, err := io.Copy(dstFile, srcFile); err != nil {
-				return fmt.Errorf("failed to copy file from %s to %s: %w", srcPath, dstPath, err)
-			}
-
-			srcFileInfo, statErr := d.Info()
-			if statErr == nil {
-				if chmodErr := os.Chmod(dstPath, srcFileInfo.Mode()); chmodErr != nil {
-					slog.Warn(
-						"Failed to set permissions on copied asset",
-						"path", dstPath,
-						"error", chmodErr,
-					)
-				}
+			if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+				return fmt.Errorf("failed to copy file content to %s: %w", destinationPath, err)
 			}
 		}
 		return nil
@@ -253,43 +211,40 @@ func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 // critical assets including CSS and JavaScript files (runtime, polyfills, and main).
 // Returns the file paths for CSS, runtime JS, polyfills JS, and main JS files.
 // Returns an error if the file cannot be opened or parsed.
-func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (cssFile, runtimeJs, polyfillsJs, mainJs string, err error) {
-	file, err := os.Open(angularIndexHTMLPath)
+// parseAngularIndexHTML parses the content of the Angular index.html file from a reader
+// and extracts references to critical assets: the main CSS file and JavaScript modules.
+func (b *HtmlReportBuilder) parseAngularIndexHTML(reader io.Reader) (cssFile, runtimeJs, polyfillsJs, mainJs string, err error) {
+	// The function no longer opens a file; it directly parses the provided reader.
+	document, err := html.Parse(reader)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to open Angular index.html at %s: %w", angularIndexHTMLPath, err)
-	}
-	defer file.Close()
-
-	doc, err := html.Parse(file)
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to parse Angular index.html: %w", err)
+		return "", "", "", "", fmt.Errorf("failed to parse HTML from reader: %w", err)
 	}
 
-	var f func(*html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			if n.Data == "link" {
+	var findAssets func(*html.Node)
+	findAssets = func(node *html.Node) {
+		if node.Type == html.ElementNode {
+			if node.Data == "link" {
 				isStylesheet := false
 				var href string
-				for _, a := range n.Attr {
-					if a.Key == "rel" && a.Val == "stylesheet" {
+				for _, attr := range node.Attr {
+					if attr.Key == "rel" && attr.Val == "stylesheet" {
 						isStylesheet = true
 					}
-					if a.Key == "href" {
-						href = a.Val
+					if attr.Key == "href" {
+						href = attr.Val
 					}
 				}
 				if isStylesheet && href != "" {
 					cssFile = href
 				}
-			} else if n.Data == "script" {
+			} else if node.Data == "script" {
 				var src string
 				isModule := false
-				for _, a := range n.Attr {
-					if a.Key == "src" {
-						src = a.Val
+				for _, attr := range node.Attr {
+					if attr.Key == "src" {
+						src = attr.Val
 					}
-					if a.Key == "type" && a.Val == "module" {
+					if attr.Key == "type" && attr.Val == "module" {
 						isModule = true
 					}
 				}
@@ -305,10 +260,12 @@ func (b *HtmlReportBuilder) parseAngularIndexHTML(angularIndexHTMLPath string) (
 				}
 			}
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
+		// Recursively traverse the HTML node tree.
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			findAssets(child)
 		}
 	}
-	f(doc)
+
+	findAssets(document)
 	return
 }

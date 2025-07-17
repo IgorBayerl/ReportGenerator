@@ -10,7 +10,6 @@ import (
 // like cyclomatic complexity is not applicable to that language.
 var ErrNotSupported = errors.New("feature not supported for this language")
 
-// Processor defines the contract for all language-specific logic.
 type Processor interface {
 	// Name returns the unique, human-readable name of the processor (e.g., "C#", "Go").
 	Name() string

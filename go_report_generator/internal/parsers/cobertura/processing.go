@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
@@ -27,7 +28,7 @@ type fileProcessingMetrics struct {
 }
 
 type processingOrchestrator struct {
-	fileReader                        FileReader
+	fileReader                        filereader.Reader
 	config                            parsers.ParserConfig
 	sourceDirs                        []string
 	uniqueFilePathsForGrandTotalLines map[string]int
@@ -37,7 +38,7 @@ type processingOrchestrator struct {
 }
 
 func newProcessingOrchestrator(
-	fileReader FileReader,
+	fileReader filereader.Reader,
 	config parsers.ParserConfig,
 	sourceDirs []string,
 	logger *slog.Logger,
@@ -205,7 +206,6 @@ func (o *processingOrchestrator) processMethodsForFile(fragments []ClassXML, cla
 
 	for _, fragment := range fragments {
 		for _, methodXML := range fragment.Methods.Method {
-			// Pass complexity map to the method processor
 			methodModel := o.processMethodXML(methodXML, classModel, fileFormatter, complexityMap)
 			allMethods = append(allMethods, *methodModel)
 		}
@@ -235,19 +235,15 @@ func (o *processingOrchestrator) processMethodXML(methodXML MethodXML, classMode
 
 	method.DisplayName = fileFormatter.FormatMethodName(method, classModel)
 
-	// =================================================================
-	// NEW: Enrich method with calculated complexity if available
-	// =================================================================
 	if metric, ok := complexityMap[method.DisplayName]; ok {
 		if len(metric.Metrics) > 0 {
 			// Override the complexity from the Cobertura file with our more accurate one.
 			method.Complexity = metric.Metrics[0].Value.(float64)
 		}
 	}
-	// =================================================================
 
 	o.processMethodLines(methodXML, method)
-	o.populateStandardMethodMetrics(method) // This will now use the new complexity
+	o.populateStandardMethodMetrics(method)
 
 	return method
 }

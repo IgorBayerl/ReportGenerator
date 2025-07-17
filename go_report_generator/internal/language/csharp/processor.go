@@ -17,7 +17,6 @@ var (
 	nestedTypeSeparatorRegex         = regexp.MustCompile(`[+/]`)
 )
 
-// CSharpProcessor implements the language.Processor interface for C#.
 type CSharpProcessor struct{}
 
 func NewCSharpProcessor() language.Processor {
@@ -28,7 +27,6 @@ func (p *CSharpProcessor) Name() string {
 	return "C#"
 }
 
-// Detect checks for C# or F# source files.
 func (p *CSharpProcessor) Detect(filePath string) bool {
 	lowerPath := strings.ToLower(filePath)
 	return strings.HasSuffix(lowerPath, ".cs") || strings.HasSuffix(lowerPath, ".fs")
@@ -108,12 +106,12 @@ func (p *CSharpProcessor) IsCompilerGeneratedClass(class *model.Class) bool {
 	return false
 }
 
-// CalculateCyclomaticComplexity returns an error indicating this feature is not supported for C#.
+// Sometimes, even if we do not support on our side, the report may come with this info, for example cobertura.
+// In those cases we will return not supported but the information from the original report will be used.
 func (p *CSharpProcessor) CalculateCyclomaticComplexity(filePath string) ([]model.MethodMetric, error) {
 	return nil, language.ErrNotSupported
 }
 
-// findNamedGroup is a helper function to extract a named group from a regex match.
 func findNamedGroup(re *regexp.Regexp, match []string, groupName string) string {
 	for i, name := range re.SubexpNames() {
 		if i > 0 && i < len(match) && name == groupName {

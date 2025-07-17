@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/language"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/parsers"
@@ -19,7 +20,7 @@ import (
 
 // processingOrchestrator holds dependencies and state for a single parsing operation.
 type processingOrchestrator struct {
-	fileReader   FileReader
+	fileReader   filereader.Reader
 	config       parsers.ParserConfig
 	assemblyName string
 	logger       *slog.Logger
@@ -33,7 +34,7 @@ type parsedMethod struct {
 	EndLine     int
 }
 
-func newProcessingOrchestrator(fileReader FileReader, config parsers.ParserConfig, logger *slog.Logger) *processingOrchestrator {
+func newProcessingOrchestrator(fileReader filereader.Reader, config parsers.ParserConfig, logger *slog.Logger) *processingOrchestrator {
 	return &processingOrchestrator{
 		fileReader: fileReader,
 		config:     config,

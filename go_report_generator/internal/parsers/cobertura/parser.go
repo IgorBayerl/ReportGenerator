@@ -18,7 +18,7 @@ import (
 
 // CoberturaParser implements the parsers.IParser interface for Cobertura XML reports.
 type CoberturaParser struct {
-	fileReader FileReader // Injected dependency
+	fileReader filereader.Reader
 }
 
 // DefaultFileReader is the production implementation of the FileReader interface.
@@ -36,7 +36,7 @@ func (dfr *DefaultFileReader) Stat(name string) (fs.FileInfo, error) {
 	return os.Stat(name)
 }
 
-func NewCoberturaParser(fileReader FileReader) parsers.IParser {
+func NewCoberturaParser(fileReader filereader.Reader) parsers.IParser {
 	return &CoberturaParser{
 		fileReader: fileReader,
 	}
