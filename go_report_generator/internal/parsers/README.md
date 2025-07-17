@@ -161,11 +161,12 @@ import (
 func run() error {
     // ...
     // 2. Create all desired parsers and the factory that holds them.
-	parserFactory := parsers.NewParserFactory(
-		cobertura.NewCoberturaParser(defaultFileReader),
-		gocover.NewGoCoverParser(defaultFileReader),
-        yourformat.NewYourFormatParser(defaultFileReader), // 2. Add your new parser here
-	)
+    prodFileReader := filereader.NewDefaultReader()
+    parserFactory := parsers.NewParserFactory(
+        cobertura.NewCoberturaParser(prodFileReader),
+        gocover.NewGoCoverParser(prodFileReader),
+        yourformat.NewYourFormatParser(prodFileReader), // 2. Add your new parser here
+    )
     // ...
 }
 ```

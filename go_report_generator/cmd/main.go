@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/analyzer"
+	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/filereader"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/glob"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/logging"
 	"github.com/IgorBayerl/ReportGenerator/go_report_generator/internal/model"
@@ -296,24 +297,19 @@ func run() error {
 
 	logger := slog.Default()
 
-	// --- EXPLICIT DEPENDENCY CREATION AND INJECTION ---
-
-	// 1. Create all desired language processors and the factory that holds them.
+	// Create all desired language processors and the factory that holds them.
 	langFactory := language.NewProcessorFactory(
 		defaultformatter.NewDefaultProcessor(),
 		csharp.NewCSharpProcessor(),
 		golang.NewGoProcessor(),
 	)
 
-	// 2. Create all desired parsers and the factory that holds them.
-	//    The fileReader dependency is created here once.
-	defaultFileReader := &cobertura.DefaultFileReader{}
+	// The fileReader dependency is created here once from the central package.
+	prodFileReader := filereader.NewDefaultReader()
 	parserFactory := parsers.NewParserFactory(
-		cobertura.NewCoberturaParser(defaultFileReader),
-		gocover.NewGoCoverParser(defaultFileReader),
+		cobertura.NewCoberturaParser(prodFileReader),
+		gocover.NewGoCoverParser(prodFileReader),
 	)
-
-	// --- END OF EXPLICIT CREATION ---
 
 	actualReportFiles, invalidPatterns, err := resolveAndValidateInputs(logger, flags)
 	if err != nil {
