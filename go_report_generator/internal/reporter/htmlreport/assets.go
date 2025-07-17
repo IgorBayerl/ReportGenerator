@@ -18,23 +18,19 @@ import (
 // and parses the embedded Angular index.html to extract critical CSS and JavaScript file references.
 // Returns an error if any critical operation fails.
 func (b *HtmlReportBuilder) initializeAssets() error {
-	// Copy static assets (like custom.css) from the embedded FS to the output directory.
 	if err := b.copyStaticAssets(); err != nil {
 		return fmt.Errorf("failed to copy static assets: %w", err)
 	}
 
-	// Copy the entire compiled Angular app from the embedded FS to the output directory.
 	if err := b.copyAngularAssets(b.OutputDir); err != nil {
 		return fmt.Errorf("failed to copy angular assets: %w", err)
 	}
 
-	// Get the embedded Angular filesystem to read from it directly.
-    angularFS, err := assets.AngularDist()
+	angularFS, err := assets.AngularDist()
 	if err != nil {
 		return fmt.Errorf("could not get embedded angular assets: %w", err)
 	}
 
-	// Open and parse the embedded index.html to discover the hashed filenames of the JS/CSS modules.
 	indexFileReader, err := angularFS.Open("index.html")
 	if err != nil {
 		return fmt.Errorf("failed to open embedded index.html: %w", err)
@@ -52,10 +48,8 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 
 	b.angularCssFile = cssFile
 
-	// Combine the discovered JS files into a single file for better performance.
 	var jsBuilder strings.Builder
 
-	// Read Runtime JS from the embedded FS
 	runtimeContent, err := fs.ReadFile(angularFS, runtimeJsFile)
 	if err != nil {
 		return fmt.Errorf("failed to read embedded Angular runtime JS file %s: %w", runtimeJsFile, err)
@@ -73,7 +67,6 @@ func (b *HtmlReportBuilder) initializeAssets() error {
 		jsBuilder.WriteString(";\n\n")
 	}
 
-	// Read Main JS from the embedded FS
 	mainContent, err := fs.ReadFile(angularFS, mainJsFile)
 	if err != nil {
 		return fmt.Errorf("failed to read embedded Angular main JS file %s: %w", mainJsFile, err)
@@ -167,7 +160,7 @@ func (b *HtmlReportBuilder) copyStaticAssets() error {
 // to the report's output directory on the real disk, preserving the directory structure.
 func (b *HtmlReportBuilder) copyAngularAssets(outputDir string) error {
 	// Get the embedded filesystem containing the compiled Angular application.
-    angularDistFS, err := assets.AngularDist()
+	angularDistFS, err := assets.AngularDist()
 	if err != nil {
 		return fmt.Errorf("could not get embedded angular assets: %w", err)
 	}
