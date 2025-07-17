@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -227,15 +226,6 @@ func setupWindowsFS() *MockFilesystem {
 	fs.AddFile("C:\\Temp\\temp2.tmp", false)
 
 	return fs
-}
-
-func normalizePathsForComparison(paths []string) []string {
-	normalized := make([]string, len(paths))
-	for i, path := range paths {
-		normalized[i] = filepath.ToSlash(path)
-	}
-	sort.Strings(normalized)
-	return normalized
 }
 
 func TestExpandNames_BasicPatterns_ReturnExpected(t *testing.T) {

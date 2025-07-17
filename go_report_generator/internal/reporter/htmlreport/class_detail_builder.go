@@ -294,25 +294,6 @@ func (b *HtmlReportBuilder) getStandardMetricHeaders() []AngularMetricDefinition
 	return headers
 }
 
-func findCorrespondingCodeElement(method *model.Method, classModel *model.Class) (*model.CodeElement, string, int) {
-	sortedFiles := make([]model.CodeFile, len(classModel.Files))
-	copy(sortedFiles, classModel.Files)
-	sort.Slice(sortedFiles, func(i, j int) bool {
-		return sortedFiles[i].Path < sortedFiles[j].Path
-	})
-	for fIdx, fValue := range sortedFiles {
-		f := fValue
-		for i := range f.CodeElements {
-			ce := &f.CodeElements[i]
-			if ce.FirstLine == method.FirstLine && ce.FullName == method.DisplayName {
-				fileShortPath := utils.ReplaceInvalidPathChars(filepath.Base(f.Path))
-				return ce, fileShortPath, fIdx + 1
-			}
-		}
-	}
-	return nil, "", 0
-}
-
 func (b *HtmlReportBuilder) buildSingleMetricRow(
 	method *model.Method,
 	correspondingCE *model.CodeElement,
