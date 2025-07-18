@@ -1,4 +1,4 @@
-# Implementing History System
+# Feature Plan: History System
 
 ### High-Level Architectural Approach
 
